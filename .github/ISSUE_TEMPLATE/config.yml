@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or usage help
+    url: https://github.com/YusufBeratZengin/audio-censor-cli/discussions
+    about: Ask how to sync a transcript, pick a mode or install FFmpeg.
+  - name: Security report
+    url: https://github.com/YusufBeratZengin/audio-censor-cli/security/advisories/new
+    about: Report a vulnerability privately, never in a public issue.

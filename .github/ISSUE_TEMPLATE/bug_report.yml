@@ -1,0 +1,66 @@
+name: Bug report
+description: Something did not work as documented
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please do not attach copyrighted audio or personal
+        recordings — a synthetic FFmpeg command that reproduces the problem is
+        far more useful.
+  - type: input
+    id: version
+    attributes:
+      label: audio-censor version
+      description: Output of `audio-censor --version`
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version and `ffmpeg -version | head -1`
+      placeholder: |
+        Ubuntu 24.04, Python 3.12.3
+        ffmpeg version 6.1.1
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command line
+      description: The exact command you ran (strip private paths if needed)
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead
+      description: Paste the error output, ideally with `--dry-run --keep-filter-script` if FFmpeg complains.
+    validations:
+      required: true
+  - type: textarea
+    id: transcript
+    attributes:
+      label: Relevant transcript snippet
+      description: The cues around the problem, with the times that should have matched.
+      render: text
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I ran `bash scripts/check.sh` or installed FFmpeg and the tests pass for me.
+          required: false
+        - label: I checked that the transcript is in sync with the media (`--offset-ms`).
+          required: false

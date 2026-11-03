@@ -1,0 +1,42 @@
+name: Feature request
+description: Suggest a new masking mode, format or option
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This project stays dependency free and focused: transcripts in, FFmpeg
+        out. Requests that need a new runtime dependency or an embedded speech
+        model are out of scope, but there are usually ways to reach the same
+        result with the standard library.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the workflow, not the implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed interface
+      description: A command line sketch is enough, e.g. `audio-censor in.mp4 -s a.srt --new-flag 5`
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you tried
+    validations:
+      required: false
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: This keeps runtime dependencies at zero (standard library + FFmpeg only).
+          required: true
+        - label: This does not require speech recognition inside the tool.
+          required: true
