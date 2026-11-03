@@ -233,6 +233,11 @@ python3 -m pip install -e ".[dev]"
 bash scripts/check.sh        # lint + format + types + tests + coverage gate
 ```
 
+The tests import `audio_censor` from the checkout itself (`pythonpath = ["."]`
+in `pyproject.toml`), so `python3 -m pytest` and `bash scripts/check.sh` work
+even before the editable install — including when pytest is a standalone script
+bound to a different interpreter.
+
 `scripts/check.sh` runs Ruff, MyPy (strict), pytest and enforces 85 % branch
 coverage (currently ~94 %). It finds the tools through the active interpreter,
 `PATH`, `~/.local/bin` or a local `.venv`, and installs anything still missing

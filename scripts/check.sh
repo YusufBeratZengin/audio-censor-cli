@@ -131,7 +131,12 @@ if ! pytest_has_cov; then
     exit 1
   fi
 fi
-"${TOOL[@]}" tests/ --cov=audio_censor --cov-report=term-missing --cov-fail-under=85
+# The project root must be importable even when pytest is a standalone script
+# bound to a different interpreter: such a launcher does not put the CWD on
+# sys.path, so `import audio_censor` and subprocess `-m audio_censor` calls
+# would fail without an editable install.
+PYTHONPATH="$PWD${PYTHONPATH:+:$PYTHONPATH}" \
+  "${TOOL[@]}" tests/ --cov=audio_censor --cov-report=term-missing --cov-fail-under=85
 
 if ! command -v ffmpeg >/dev/null 2>&1; then
   echo "note: ffmpeg is not installed, integration tests were skipped" >&2

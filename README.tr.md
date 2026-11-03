@@ -163,6 +163,11 @@ python3 -m pip install -e ".[dev]"
 bash scripts/check.sh        # lint + biçim + tip + test + kapsam eşiği
 ```
 
+Testler `audio_censor` paketini doğrudan kopyadan içe aktarır (`pyproject.toml`
+içinde `pythonpath = ["."]`), yani düzenlenebilir kurulum yapılmadan da
+`python3 -m pytest` ve `bash scripts/check.sh` çalışır — pytest başka bir
+yorumlayıcıya bağlı tek başına bir betik olsa bile.
+
 `scripts/check.sh` Ruff, MyPy (strict), pytest çalıştırır ve %85 dal kapsamı ister (şu an ~%94). Araçları etkin yorumlayıcıda, `PATH`'te, `~/.local/bin` içinde ve varsa yerel `.venv`'de arar; bulamadıklarını vazgeçmeden önce kurar, böylece `pip install -e ".[dev]"` çalıştırılmamış taze bir kopyada da çalışır. Bu kurulumu kapatmak için `CHECK_NO_INSTALL=1` verin. Entegrasyon testleri FFmpeg ile gerçek ses üretip 1 kHz bip'i DFT ile doğrular, hiçbir örnek farkının tonun doğal eğimini aşmadığını (tıklama testi) ve video akışı MD5'inin değişmediğini kontrol eder. FFmpeg yoksa otomatik atlanır; test paketinin hiçbiri ağa çıkmaz.
 
 ## Katkı ve proje belgeleri

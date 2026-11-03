@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import json
 import math
+import os
 import struct
 import subprocess
 import sys
@@ -457,6 +458,11 @@ def test_python_module_entrypoint(
     audio_file: Path, srt_file: Path, words_file: Path, tmp_path: Path
 ) -> None:
     output = tmp_path / "module.wav"
+    # The child process gets the checkout on PYTHONPATH, so `-m audio_censor`
+    # works without an editable install and regardless of the current directory.
+    env = dict(os.environ)
+    repository_root = str(Path(__file__).resolve().parents[1])
+    env["PYTHONPATH"] = os.pathsep.join(filter(None, [repository_root, env.get("PYTHONPATH")]))
     completed = subprocess.run(
         [
             sys.executable,
@@ -473,6 +479,7 @@ def test_python_module_entrypoint(
         capture_output=True,
         text=True,
         check=False,
+        env=env,
     )
     assert completed.returncode == 0, completed.stderr
     assert output.exists()

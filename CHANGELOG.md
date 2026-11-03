@@ -11,6 +11,12 @@ First public release.
 
 ### Fixed
 
+- The test suite no longer fails with `ModuleNotFoundError: No module named
+  'audio_censor'` when pytest is started in a way that does not put the checkout
+  on `sys.path` (a standalone pytest script bound to another interpreter, or
+  `pytest` run from another directory): `pyproject.toml` now sets
+  `pythonpath = ["."]` and `scripts/check.sh` exports the project root for the
+  pytest step, so no editable install is required to run the tests.
 - `scripts/check.sh` no longer stops with "ruff is not installed" on a fresh
   checkout: it resolves Ruff/MyPy/pytest through the active interpreter, `PATH`,
   `~/.local/bin` and a local `.venv`, installs a missing dev tool once
