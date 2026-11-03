@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 First public release.
 
+### Fixed
+
+- `scripts/check.sh` no longer stops with "ruff is not installed" on a fresh
+  checkout: it resolves Ruff/MyPy/pytest through the active interpreter, `PATH`,
+  `~/.local/bin` and a local `.venv`, installs a missing dev tool once
+  (`CHECK_NO_INSTALL=1` opts out), and probes the resolved pytest for the
+  coverage plugin instead of assuming the same interpreter.
+
 ### Added
 
 - Three masking modes: `bleep` (1 kHz sine), `mute` (silence) and `reverse`

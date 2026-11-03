@@ -234,10 +234,15 @@ bash scripts/check.sh        # lint + format + types + tests + coverage gate
 ```
 
 `scripts/check.sh` runs Ruff, MyPy (strict), pytest and enforces 85 % branch
-coverage (currently ~94 %). Integration tests render real audio with FFmpeg and
-verify the 1 kHz beep with a DFT, that no sample step exceeds the natural slope
-of the tone (click test), and that the video stream MD5 is unchanged. They skip
-automatically when FFmpeg is missing; nothing in the suite touches the network.
+coverage (currently ~94 %). It finds the tools through the active interpreter,
+`PATH`, `~/.local/bin` or a local `.venv`, and installs anything still missing
+before it gives up — so it also works in a fresh checkout where
+`pip install -e ".[dev]"` has not run yet. Set `CHECK_NO_INSTALL=1` to turn that
+bootstrap off and fail fast instead. Integration tests render real audio with
+FFmpeg and verify the 1 kHz beep with a DFT, that no sample step exceeds the
+natural slope of the tone (click test), and that the video stream MD5 is
+unchanged. They skip automatically when FFmpeg is missing; nothing in the test
+suite touches the network.
 
 Layout:
 

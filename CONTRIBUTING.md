@@ -15,7 +15,10 @@ bash scripts/check.sh
 
 `scripts/check.sh` is the same gate CI runs: Ruff (lint + format), MyPy in
 strict mode, pytest with a coverage floor of 85 %. A pull request is ready when
-that script exits 0.
+that script exits 0. It locates the tools through the active interpreter,
+`PATH`, `~/.local/bin` and a local `.venv`, installing whichever dev tool is
+still missing, so it is safe to run in a fresh checkout; export
+`CHECK_NO_INSTALL=1` to disable that and get a fail-fast error instead.
 
 FFmpeg and FFprobe must be installed for the integration tests. Without them the
 suite still runs and skips the render tests, but coverage will drop below the
