@@ -19,3 +19,4 @@ htmlcov/
 # Local scratch output
 *.censored.*
 demo/
+demo-out/
