@@ -7,6 +7,7 @@ import json
 import math
 import struct
 import subprocess
+import sys
 import wave
 from pathlib import Path
 
@@ -458,7 +459,7 @@ def test_python_module_entrypoint(
     output = tmp_path / "module.wav"
     completed = subprocess.run(
         [
-            "python3",
+            sys.executable,
             "-m",
             "audio_censor",
             str(audio_file),
