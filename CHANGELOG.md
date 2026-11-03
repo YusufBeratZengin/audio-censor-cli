@@ -5,6 +5,32 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- All output paths (`--output`, `--audit`, `--clean-subtitles`,
+  `--keep-filter-script`) are validated against the input, the transcript and
+  each other before anything is written, so a collision can no longer overwrite
+  the source media or subtitles.
+- `--offset-ms` keeps the same word objects in `Transcript.cues` and
+  `Transcript.words`, so `--clean-subtitles` masks the shifted words instead of
+  writing the transcript unchanged.
+- `--dry-run` no longer writes the audit CSV or the censored subtitles, and
+  `--dry-run --json` prints a single JSON document (the graph is included as
+  `filter_graph`) instead of a command listing followed by JSON.
+- A word list argument that looks like a file (`.txt`, a path separator,
+  `~`/`.`) must exist; a typo is reported instead of being used as a literal
+  word and silently matching nothing.
+- The README no longer claims millisecond-accurate SRT/VTT timing or unchanged
+  audio outside the ranges; it states that word timings are approximate and
+  that the audio stream is re-encoded.
+- The documented word list example keeps `#` comments on their own line, so a
+  comment can no longer become part of a regular expression.
+- Prober tests mock `subprocess.run` instead of executing `#!/bin/sh` scripts,
+  so they also run on Windows; the FFmpeg availability guard now performs a
+  real check.
+
 ## [0.1.0] - 2026-11-03
 
 First public release.

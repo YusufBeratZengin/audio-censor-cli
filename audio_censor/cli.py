@@ -211,6 +211,28 @@ class _Reporter:
             print(f"ok: {message}", file=self._stream)
 
 
+def _check_output_paths(options: CliOptions) -> None:
+    """Refuse to overwrite a source file or to reuse one output path twice."""
+    sources = {"input path": options.input, "transcript path": options.subtitles}
+    outputs: list[tuple[str, Path]] = [("output path", options.output)]
+    if options.audit is not None:
+        outputs.append(("--audit path", options.audit))
+    if options.clean_subtitles is not None:
+        outputs.append(("--clean-subtitles path", options.clean_subtitles))
+    if options.keep_script is not None:
+        outputs.append(("--keep-filter-script path", options.keep_script))
+
+    seen: dict[Path, str] = {}
+    for label, path in outputs:
+        resolved = path.resolve()
+        for source_label, source in sources.items():
+            if resolved == source.resolve():
+                raise ConfigError(f"{label} must differ from the {source_label}: {path}")
+        if resolved in seen:
+            raise ConfigError(f"{label} is the same path as the {seen[resolved]}: {path}")
+        seen[resolved] = label
+
+
 def _validate(options: CliOptions) -> None:
     if not options.input.exists():
         raise ConfigError(f"input file not found: {options.input}")
@@ -218,8 +240,7 @@ def _validate(options: CliOptions) -> None:
         raise ConfigError(f"input is not a file: {options.input}")
     if not options.subtitles.exists():
         raise ConfigError(f"transcript not found: {options.subtitles}")
-    if options.output.resolve() == options.input.resolve():
-        raise ConfigError("output path must differ from the input path")
+    _check_output_paths(options)
     if options.fade_ms < 0:
         raise ConfigError("--fade-ms must be zero or positive")
     if options.pad_ms < 0:
@@ -253,6 +274,7 @@ def _summary(
     output: Path | None,
     elapsed: float,
     command: list[str] | None,
+    graph: str | None = None,
 ) -> dict[str, object]:
     return {
         "program": PROGRAM,
@@ -280,7 +302,43 @@ def _summary(
         ],
         "elapsed_seconds": round(elapsed, 3),
         "command": command,
+        "filter_graph": graph,
     }
+
+
+def _write_reports(
+    options: CliOptions,
+    *,
+    transcript: Transcript,
+    matches: list[Match],
+    intervals: list[Interval],
+    duration: float,
+    reporter: _Reporter,
+) -> None:
+    """Write the optional audit log and censored subtitles."""
+    if options.audit is not None:
+        write_audit(
+            options.audit,
+            matches,
+            intervals,
+            mode=options.mode,
+            pad=options.pad_ms / 1000.0,
+            duration=duration,
+        )
+        reporter.info(f"audit log: {options.audit}")
+    if options.clean_subtitles is not None:
+        write_clean_srt(options.clean_subtitles, transcript, matches, mask=options.mask)
+        reporter.info(f"censored subtitles: {options.clean_subtitles}")
+
+
+def _report_planned_outputs(options: CliOptions, reporter: _Reporter) -> None:
+    """Describe the files a real run would write, without creating them."""
+    if options.audit is not None:
+        reporter.info(f"dry run: would write audit log {options.audit}")
+    if options.clean_subtitles is not None:
+        reporter.info(f"dry run: would write censored subtitles {options.clean_subtitles}")
+    if options.keep_script is not None:
+        reporter.info(f"dry run: would keep the filter graph at {options.keep_script}")
 
 
 def execute(options: CliOptions, stdout: TextIO | None = None, stderr: TextIO | None = None) -> int:
@@ -330,6 +388,7 @@ def execute(options: CliOptions, stdout: TextIO | None = None, stderr: TextIO | 
         reporter.info("no bad words matched")
         if options.dry_run:
             reporter.info("nothing to do (dry run)")
+            _report_planned_outputs(options, reporter)
             if options.json_output:
                 print(
                     json.dumps(
@@ -350,6 +409,14 @@ def execute(options: CliOptions, stdout: TextIO | None = None, stderr: TextIO | 
         command = engine.build_copy_argv(input_path=options.input, output_path=options.output)
         options.output.parent.mkdir(parents=True, exist_ok=True)
         engine.remux(input_path=options.input, output_path=options.output)
+        _write_reports(
+            options,
+            transcript=transcript,
+            matches=matches,
+            intervals=[],
+            duration=media.duration,
+            reporter=reporter,
+        )
         elapsed = time.monotonic() - started
         reporter.ok(f"nothing to mask, streams copied to {options.output} in {elapsed:.2f}s")
         if options.json_output:
@@ -376,20 +443,6 @@ def execute(options: CliOptions, stdout: TextIO | None = None, stderr: TextIO | 
     if not options.quiet:
         _describe_matches(matches, intervals, reporter.stream)
 
-    if options.audit is not None:
-        write_audit(
-            options.audit,
-            matches,
-            intervals,
-            mode=options.mode,
-            pad=options.pad_ms / 1000.0,
-            duration=media.duration,
-        )
-        reporter.info(f"audit log: {options.audit}")
-    if options.clean_subtitles is not None:
-        write_clean_srt(options.clean_subtitles, transcript, matches, mask=options.mask)
-        reporter.info(f"censored subtitles: {options.clean_subtitles}")
-
     params = AudioParams(
         sample_rate=media.sample_rate,
         channels=media.channels,
@@ -405,6 +458,10 @@ def execute(options: CliOptions, stdout: TextIO | None = None, stderr: TextIO | 
     )
 
     if options.dry_run:
+        # A dry run must not touch the filesystem: no audit CSV, no censored
+        # subtitles and no retained filter script.  In --json mode stdout must
+        # contain exactly one JSON document, so the human command listing is
+        # suppressed and the graph travels inside the document instead.
         option = engine.script_option
         argv = engine.build_argv(
             input_path=options.input,
@@ -415,9 +472,6 @@ def execute(options: CliOptions, stdout: TextIO | None = None, stderr: TextIO | 
             audio_codec=options.audio_codec,
             audio_bitrate=options.audio_bitrate,
         )
-        print(format_argv(argv), file=out)
-        print("# filter_complex:", file=out)
-        print(graph, file=out)
         if options.json_output:
             print(
                 json.dumps(
@@ -429,12 +483,27 @@ def execute(options: CliOptions, stdout: TextIO | None = None, stderr: TextIO | 
                         output=options.output,
                         elapsed=time.monotonic() - started,
                         command=argv,
+                        graph=graph,
                     ),
                     indent=2,
                 ),
                 file=out,
             )
+        else:
+            print(format_argv(argv), file=out)
+            print("# filter_complex:", file=out)
+            print(graph, file=out)
+            _report_planned_outputs(options, reporter)
         return 0
+
+    _write_reports(
+        options,
+        transcript=transcript,
+        matches=matches,
+        intervals=intervals,
+        duration=media.duration,
+        reporter=reporter,
+    )
 
     options.output.parent.mkdir(parents=True, exist_ok=True)
     result = engine.run(

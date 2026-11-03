@@ -301,6 +301,14 @@ class TestLoadTranscript:
         assert shifted.words[0].start == pytest.approx(3.0)
         assert shift_transcript(transcript, 0.0) is transcript
 
+    def test_shift_reuses_word_objects(self, tmp_path: Path) -> None:
+        target = tmp_path / "a.srt"
+        target.write_text(SRT_SAMPLE, encoding="utf-8")
+        shifted = shift_transcript(load_transcript(target), 1.5)
+        cue_words = [word for cue in shifted.cues for word in cue.words]
+        assert cue_words
+        assert all(any(word is other for other in shifted.words) for word in cue_words)
+
 
 class TestTextHelpers:
     @pytest.mark.parametrize(

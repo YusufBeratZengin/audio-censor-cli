@@ -79,7 +79,7 @@ Bip sesi de ölçülebilir: eski kelimenin yerinde 1 kHz, dosyanın geri kalanı
 | `mute` | tam sessizlik, 5 ms yumuşatma | çağrı merkezi kayıtları, kişisel veri |
 | `reverse` | aynı dilimin tersten çalınması, 5 ms yumuşatma | komik efekt, çocuk içerikleri |
 
-Maskeleme aralıklarının dışındaki ses hiç değişmez, orijinal seviyesinde kalır.
+Her mod yalnızca maskelenen aralıktaki sesi değiştirir, gerisini yerinde bırakır. Ancak ses akışı yeniden kodlanır — konteynere göre AAC, Opus veya MP3 — yani tüm parça bir kez çözülüp yeniden kodlanır ve kayıplı biçimlerde yalnızca maskelenen yerlerde değil, her yerde az da olsa kalite kaybı olur. Video akışı yine bit bit kopyalanır. Aralık dışının bit düzeyinde korunması gerekiyorsa `.wav` veya `.flac` çıktısına (ya da kayıpsız bir `--audio-codec` değerine) yazın.
 
 ## Döküm formatları
 
@@ -91,7 +91,7 @@ Maskeleme aralıklarının dışındaki ses hiç değişmez, orijinal seviyesind
 
 Desteklenen JSON biçimleri: `faster-whisper`/`openai-whisper` (`words` alanlı ya da alansız `segments`), düz `{"words": [...]}`, segment listesi ve `whisper.cpp` çıktısı (`transcription[].offsets`, milisaniye).
 
-SRT ve VTT yalnızca replik düzeyinde zaman taşır; bu yüzden kelime aralıkları uzunluğa göre tahmin edilir. Bu tahmin replik içinde birkaç on milisaniye hassastır — bip için yeterli, cümlenin tamamını gizlemek için değil. Milisaniye hassasiyeti gerekiyorsa Whisper JSON kullan.
+SRT ve VTT yalnızca replik düzeyinde zaman taşır; bu yüzden kelime aralıkları yaklaşıktır: replik süresi kelimelere uzunluklarına göre paylaştırılır. Gerçek konuşmada duraklamalar, düzensiz hız ve uzun kelimeler vardır; tahmin edilen sınırlar birkaç milisaniyeden çok daha fazla sapabilir. Bu çoğu bip için yeterlidir, ama zamanları yaklaşık kabul edin ve yerleşimin kesin olması gerekiyorsa Whisper JSON kelime zamanlarını kullanın.
 
 ## Seçenekler
 
@@ -120,17 +120,29 @@ SRT ve VTT yalnızca replik düzeyinde zaman taşır; bu yüzden kelime aralıkl
 
 Çıkış kodları: `0` başarılı (eşleşme yoksa dosya olduğu gibi yeniden paketlenir), `1` çalışma hatası, `2` hatalı komut satırı.
 
+`--dry-run` hiçbir şey yazmaz: çıktı dosyası, denetim CSV'si, sansürlü altyazı ve saklanan filtre grafiği oluşmaz. `--json` ile tam olarak tek bir JSON belgesi basar (grafik `filter_graph` alanındadır), yani `... --dry-run --json | jq` çalışır.
+
+Tüm çıktı yolları (`--output`, `--audit`, `--clean-subtitles`, `--keep-filter-script`) yazmadan önce denetlenir. Girdiden, dökümden ve birbirlerinden farklı olmalıdır; böylece bir yazım hatası kaynak medyayı veya altyazıyı ezemez.
+
 ## Kelime listesi
 
-Her satır bir girdi, `#` yorum:
+Her satır bir girdi. `#` ile başlayan satır yorumdur; yorumlar kendi satırında
+olmalıdır, çünkü `#` bir düzenli ifadenin parçası olabilir:
 
 ```
 # yalnızca bariz örnek kelimeler
 shit
 son of a bitch
-re:fuck\w*        # düzenli ifade, re: önekiyle
-re:s+h+i+t+       # uzatılmış yazımlar
+# düzenli ifade, re: önekiyle
+re:fuck\w*
+# uzatılmış yazımlar
+re:s+h+i+t+
 ```
+
+Açıkça dosyaya benzeyen bir argüman (`badwords.txt`, ayraç içeren bir yol veya
+`~`/`.` öneki) var olmak zorundadır; yazım hatası, sessizce düz kelime olarak
+kullanılmak yerine hata verir. Virgülsüz düz kelimeler (`-w shit` gibi) hâlâ
+satır içi liste sayılır.
 
 * Düz girdiler **tam kelime** olarak, büyük/küçük harf duyarsız eşleşir; Türkçe `I/İ/ı` ve `ğ/ş/ç/ö/ü` ASCII karşılıklarına katlanır, böylece döküm harfli ya da harfsiz yazılmış olsa da aynı liste tutar. `fuck` yazımı `fucking` ile eşleşmez; kök için `re:fuck\w*` kullan.
 * `re:` girdileri normalize edilmiş metin üzerinde çalışan ham Python düzenli ifadeleridir (`re.IGNORECASE`).
@@ -168,7 +180,7 @@ içinde `pythonpath = ["."]`), yani düzenlenebilir kurulum yapılmadan da
 `python3 -m pytest` ve `bash scripts/check.sh` çalışır — pytest başka bir
 yorumlayıcıya bağlı tek başına bir betik olsa bile.
 
-`scripts/check.sh` Ruff, MyPy (strict), pytest çalıştırır ve %85 dal kapsamı ister (şu an ~%94). Araçları etkin yorumlayıcıda, `PATH`'te, `~/.local/bin` içinde ve varsa yerel `.venv`'de arar; bulamadıklarını vazgeçmeden önce kurar, böylece `pip install -e ".[dev]"` çalıştırılmamış taze bir kopyada da çalışır. Bu kurulumu kapatmak için `CHECK_NO_INSTALL=1` verin. Entegrasyon testleri FFmpeg ile gerçek ses üretip 1 kHz bip'i DFT ile doğrular, hiçbir örnek farkının tonun doğal eğimini aşmadığını (tıklama testi) ve video akışı MD5'inin değişmediğini kontrol eder. FFmpeg yoksa otomatik atlanır; test paketinin hiçbiri ağa çıkmaz.
+`scripts/check.sh` Ruff, MyPy (strict), pytest çalıştırır ve %85 dal kapsamı ister (şu an ~%94). Araçları etkin yorumlayıcıda, `PATH`'te, `~/.local/bin` içinde ve varsa yerel `.venv`'de arar; bulamadıklarını vazgeçmeden önce kurar, böylece `pip install -e ".[dev]"` çalıştırılmamış taze bir kopyada da çalışır. Bu kurulumu kapatmak için `CHECK_NO_INSTALL=1` verin. Entegrasyon testleri FFmpeg ile gerçek ses üretip 1 kHz bip'i DFT ile doğrular, hiçbir örnek farkının tonun doğal eğimini aşmadığını (tıklama testi) ve video akışı MD5'inin değişmediğini kontrol eder. FFmpeg `PATH`'te yoksa testler sessizce atlanmak yerine erkenden başarısız olur; test paketinin hiçbiri ağa çıkmaz.
 
 ## Katkı ve proje belgeleri
 
@@ -180,4 +192,4 @@ yorumlayıcıya bağlı tek başına bir betik olsa bile.
 
 ## Lisans
 
-MIT © 2026 YusufBeratZengin. Ayrıntı: [LICENSE](LICENSE).
+MIT © 2026 Yusuf Berat Zengin. Ayrıntı: [LICENSE](LICENSE).

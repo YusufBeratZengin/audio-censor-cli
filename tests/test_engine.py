@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shlex
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from conftest import requires_ffmpeg
@@ -57,21 +58,25 @@ class TestProbe:
         with pytest.raises(FFmpegError, match="not found"):
             probe(audio_file, ffprobe="ffprobe-does-not-exist")
 
-    @requires_ffmpeg
-    def test_invalid_json(self, audio_file: Path, tmp_path: Path, monkeypatch) -> None:
-        fake = tmp_path / "fake-ffprobe"
-        fake.write_text("#!/bin/sh\necho 'not json'\n", encoding="utf-8")
-        fake.chmod(0o755)
+    def test_invalid_json(self, tmp_path: Path, monkeypatch) -> None:
+        # A stand-in for subprocess.run, so the test does not need a shell
+        # script (which Windows cannot execute) and runs without FFmpeg.
+        monkeypatch.setattr(
+            engine_module.subprocess,
+            "run",
+            lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="not json", stderr=""),
+        )
         with pytest.raises(FFmpegError, match="invalid JSON"):
-            probe(audio_file, ffprobe=str(fake))
+            probe(tmp_path / "input.wav", ffprobe="fake-ffprobe")
 
-    @requires_ffmpeg
-    def test_failure_exit_code(self, audio_file: Path, tmp_path: Path) -> None:
-        fake = tmp_path / "fake-ffprobe"
-        fake.write_text("#!/bin/sh\necho boom >&2\nexit 3\n", encoding="utf-8")
-        fake.chmod(0o755)
+    def test_failure_exit_code(self, tmp_path: Path, monkeypatch) -> None:
+        monkeypatch.setattr(
+            engine_module.subprocess,
+            "run",
+            lambda *args, **kwargs: SimpleNamespace(returncode=3, stdout="", stderr="boom"),
+        )
         with pytest.raises(FFmpegError, match="could not read"):
-            probe(audio_file, ffprobe=str(fake))
+            probe(tmp_path / "input.wav", ffprobe="fake-ffprobe")
 
 
 class TestVersionDetection:

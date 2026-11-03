@@ -9,7 +9,7 @@ description = "Automated audio/video profanity and sensitive word bleeper and mu
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "YusufBeratZengin", email = "118852217+YusufBeratZengin@users.noreply.github.com" }]
+authors = [{ name = "Yusuf Berat Zengin", email = "118852217+YusufBeratZengin@users.noreply.github.com" }]
 keywords = [
   "ffmpeg",
   "censorship",

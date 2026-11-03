@@ -48,6 +48,38 @@ class TestWordSources:
     def test_resolve_inline(self) -> None:
         assert resolve_words("shit,fuck") == ["shit", "fuck"]
 
+    def test_bare_word_stays_inline(self) -> None:
+        assert resolve_words("shit") == ["shit"]
+
+    def test_missing_path_like_entry_is_an_error(self, tmp_path: Path) -> None:
+        with pytest.raises(ConfigError, match="bad word file not found"):
+            resolve_words(str(tmp_path / "badwords.txt"))
+
+    def test_directory_is_rejected(self, tmp_path: Path) -> None:
+        with pytest.raises(ConfigError, match="not a regular file"):
+            resolve_words(str(tmp_path))
+
+    def test_regex_is_not_mistaken_for_a_path(self) -> None:
+        assert resolve_words(r"re:fuck\w*") == [r"re:fuck\w*"]
+
+    def test_documented_example_list_is_usable(self, tmp_path: Path) -> None:
+        # Mirrors the README example: comments live on their own line, so a
+        # trailing ``#`` can never become part of a regular expression.
+        target = tmp_path / "badwords.txt"
+        target.write_text(
+            "# obvious demo words only\n"
+            "shit\n"
+            "son of a bitch\n"
+            "# regular expression, opt in with the re: prefix\n"
+            "re:fuck\\w*\n"
+            "# stretched spellings\n"
+            "re:s+h+i+t+\n",
+            encoding="utf-8",
+        )
+        matcher = BadWordMatcher(resolve_words(str(target)))
+        words = make_words((0.0, 0.3, "fucking"), (0.4, 0.7, "shiiit"))
+        assert [match.text for match in matcher.find(words)] == ["fucking", "shiiit"]
+
 
 class TestMatching:
     def test_matches_whole_word_only(self) -> None:

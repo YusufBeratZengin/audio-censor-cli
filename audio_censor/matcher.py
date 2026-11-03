@@ -61,8 +61,17 @@ class _Pattern:
     fuzzy_ok: bool
 
 
+#: Suffixes that make an argument look like a word list file rather than an
+#: inline comma separated list.
+_PATH_SUFFIXES = frozenset({".txt", ".list", ".words", ".csv", ".dict"})
+
+
 def words_from_file(path: str | Path) -> list[str]:
-    """Read one word/phrase per line, ``#`` comments and blanks ignored."""
+    """Read one word/phrase per line, whole-line ``#`` comments and blanks ignored.
+
+    Trailing comments are deliberately *not* stripped: a ``#`` may be part of a
+    regular expression, so the documentation keeps comments on their own line.
+    """
     file_path = Path(path)
     try:
         raw = file_path.read_text(encoding="utf-8-sig")
@@ -83,11 +92,36 @@ def words_from_string(spec: str) -> list[str]:
     return [item.strip() for item in re.split(r"[,;]", spec) if item.strip()]
 
 
+def _looks_like_path(spec: str) -> bool:
+    """Return True when ``spec`` is unambiguously meant as a word list file."""
+    if spec.startswith("re:"):
+        return False
+    if "," in spec or ";" in spec:
+        return False
+    if "/" in spec or "\\" in spec or spec.startswith(("~", ".")):
+        return True
+    return Path(spec).suffix.lower() in _PATH_SUFFIXES
+
+
 def resolve_words(spec: str) -> list[str]:
-    """Accept either a path to a word list file or an inline list."""
-    candidate = Path(spec)
-    if candidate.exists() and candidate.is_file():
+    """Accept either a path to a word list file or an inline list.
+
+    Anything that is clearly a path (a known list suffix, a path separator or
+    a ``~``/``.`` prefix) must exist; silently treating a typo such as
+    ``badwords.txt`` as the literal word ``badwords.txt`` would censor nothing
+    while still reporting success.  Ambiguous bare words stay inline so
+    ``-w shit`` keeps working.
+    """
+    candidate = Path(spec).expanduser()
+    if candidate.exists():
+        if not candidate.is_file():
+            raise ConfigError(f"bad word file is not a regular file: {candidate}")
         return words_from_file(candidate)
+    if _looks_like_path(spec):
+        raise ConfigError(
+            f"bad word file not found: {candidate}; "
+            'use an inline list such as "shit,fuck" if you meant words'
+        )
     return words_from_string(spec)
 
 

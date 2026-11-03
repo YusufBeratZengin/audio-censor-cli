@@ -14,6 +14,8 @@ from pathlib import Path
 
 import pytest
 from conftest import (
+    FFMPEG,
+    FFPROBE,
     max_step,
     md5_stream,
     read_wav,
@@ -289,6 +291,134 @@ class TestReports:
         assert "ffmpeg" in captured
         assert "[aout]" in captured
 
+    def test_dry_run_writes_nothing(
+        self,
+        audio_file: Path,
+        srt_file: Path,
+        words_file: Path,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        output = tmp_path / "dry.wav"
+        audit = tmp_path / "dry.csv"
+        clean = tmp_path / "dry.srt"
+        script = tmp_path / "dry-graph.txt"
+        assert (
+            run_cli(
+                audio_file,
+                "-s",
+                srt_file,
+                "-w",
+                words_file,
+                "-o",
+                output,
+                "--audit",
+                audit,
+                "--clean-subtitles",
+                clean,
+                "--keep-filter-script",
+                script,
+                "--dry-run",
+            )
+            == 0
+        )
+        assert not output.exists()
+        assert not audit.exists()
+        assert not clean.exists()
+        assert not script.exists()
+        assert "would write audit log" in capsys.readouterr().out
+
+    def test_dry_run_json_is_a_single_document(
+        self,
+        audio_file: Path,
+        srt_file: Path,
+        words_file: Path,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        output = tmp_path / "dry.wav"
+        assert (
+            run_cli(
+                audio_file,
+                "-s",
+                srt_file,
+                "-w",
+                words_file,
+                "-o",
+                output,
+                "--dry-run",
+                "--json",
+            )
+            == 0
+        )
+        captured = capsys.readouterr()
+        payload = json.loads(captured.out)  # must be exactly one JSON document
+        assert payload["command"][0] == "ffmpeg"
+        assert payload["filter_graph"] and "[aout]" in payload["filter_graph"]
+        assert not output.exists()
+
+    def test_offset_and_clean_subtitles_mask_the_same_words(
+        self,
+        audio_file: Path,
+        srt_file: Path,
+        words_file: Path,
+        tmp_path: Path,
+    ) -> None:
+        clean = tmp_path / "shifted.srt"
+        output = tmp_path / "shifted.wav"
+        assert (
+            run_cli(
+                audio_file,
+                "-s",
+                srt_file,
+                "-w",
+                words_file,
+                "-o",
+                output,
+                "--offset-ms",
+                "1000",
+                "--clean-subtitles",
+                clean,
+            )
+            == 0
+        )
+        text = clean.read_text(encoding="utf-8")
+        assert "[BLEEP]" in text
+        assert "shit" not in text
+        assert "00:00:04,000 --> 00:00:05,000" in text
+
+    def test_no_match_still_writes_empty_reports(
+        self,
+        audio_file: Path,
+        srt_file: Path,
+        tmp_path: Path,
+    ) -> None:
+        output = tmp_path / "untouched.wav"
+        audit = tmp_path / "empty.csv"
+        clean = tmp_path / "unchanged.srt"
+        assert (
+            run_cli(
+                audio_file,
+                "-s",
+                srt_file,
+                "-w",
+                "banana",
+                "-o",
+                output,
+                "--audit",
+                audit,
+                "--clean-subtitles",
+                clean,
+            )
+            == 0
+        )
+        with audit.open(encoding="utf-8", newline="") as handle:
+            assert handle.readline().strip().startswith("index,")
+            assert handle.read() == ""
+        text = clean.read_text(encoding="utf-8")
+        assert "[BLEEP]" not in text
+        assert "shit happens here" in text
+
     def test_keep_filter_script(
         self, audio_file: Path, srt_file: Path, words_file: Path, tmp_path: Path
     ) -> None:
@@ -399,6 +529,79 @@ class TestErrors:
         assert run_cli(audio_file, "-s", srt_file, "-w", words_file, "-o", audio_file) == 1
         assert "must differ" in capsys.readouterr().err
 
+    def test_audit_cannot_overwrite_the_input(
+        self, audio_file: Path, srt_file: Path, words_file: Path, capsys
+    ) -> None:
+        assert run_cli(audio_file, "-s", srt_file, "-w", words_file, "--audit", audio_file) == 1
+        assert "--audit path must differ from the input path" in capsys.readouterr().err
+
+    def test_clean_subtitles_cannot_overwrite_the_transcript(
+        self, audio_file: Path, srt_file: Path, words_file: Path, capsys
+    ) -> None:
+        assert (
+            run_cli(
+                audio_file,
+                "-s",
+                srt_file,
+                "-w",
+                words_file,
+                "--clean-subtitles",
+                srt_file,
+            )
+            == 1
+        )
+        assert "--clean-subtitles path must differ from the transcript path" in (
+            capsys.readouterr().err
+        )
+
+    def test_output_paths_must_not_collide(
+        self, audio_file: Path, srt_file: Path, words_file: Path, tmp_path: Path, capsys
+    ) -> None:
+        shared = tmp_path / "shared.csv"
+        assert (
+            run_cli(
+                audio_file,
+                "-s",
+                srt_file,
+                "-w",
+                words_file,
+                "--audit",
+                shared,
+                "--keep-filter-script",
+                shared,
+            )
+            == 1
+        )
+        assert "is the same path" in capsys.readouterr().err
+
+    def test_keep_filter_script_cannot_overwrite_the_output(
+        self, audio_file: Path, srt_file: Path, words_file: Path, tmp_path: Path, capsys
+    ) -> None:
+        output = tmp_path / "out.wav"
+        assert (
+            run_cli(
+                audio_file,
+                "-s",
+                srt_file,
+                "-w",
+                words_file,
+                "-o",
+                output,
+                "--keep-filter-script",
+                output,
+            )
+            == 1
+        )
+        assert "is the same path" in capsys.readouterr().err
+
+    def test_missing_word_file_is_an_error(
+        self, audio_file: Path, srt_file: Path, tmp_path: Path, capsys
+    ) -> None:
+        missing = tmp_path / "badwords.txt"
+        assert run_cli(audio_file, "-s", srt_file, "-w", missing) == 1
+        assert "bad word file not found" in capsys.readouterr().err
+        assert not (audio_file.parent / "input.censored.wav").exists()
+
     def test_bad_word_file(self, audio_file: Path, srt_file: Path, tmp_path: Path, capsys) -> None:
         empty = tmp_path / "empty.txt"
         empty.write_text("# only comments\n", encoding="utf-8")
@@ -487,3 +690,8 @@ def test_python_module_entrypoint(
 
 def test_ffmpeg_is_available() -> None:
     """Guard: the suite must not silently skip everything."""
+    assert FFMPEG is not None, "ffmpeg is not on PATH; integration tests would be skipped"
+    assert FFPROBE is not None, "ffprobe is not on PATH; integration tests would be skipped"
+    completed = subprocess.run([FFMPEG, "-version"], capture_output=True, text=True, check=False)
+    assert completed.returncode == 0
+    assert "ffmpeg version" in (completed.stdout + completed.stderr)

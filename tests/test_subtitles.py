@@ -63,6 +63,15 @@ class TestRenderCleanSrt:
         assert "**** indeed" in rendered
         assert DEFAULT_MASK not in rendered
 
+    def test_shifted_transcript_is_still_masked(self, transcript) -> None:
+        from audio_censor.parser import shift_transcript
+
+        shifted = shift_transcript(transcript, 1.0)
+        matches = BadWordMatcher(["world"]).find(shifted.words)
+        rendered = render_clean_srt(shifted, matches)
+        assert "hello [BLEEP]" in rendered
+        assert "hello world" not in rendered
+
     def test_accepts_precomputed_indices(self, transcript) -> None:
         rendered = render_clean_srt(transcript, {6})
         assert "hello [BLEEP]" in rendered

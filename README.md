@@ -100,8 +100,12 @@ click.
 | `mute` | digital silence, 5 ms fade in/out | call-centre recordings, PII |
 | `reverse` | the same slice played backwards, 5 ms fades | comedy effect, kids' content |
 
-Every mode keeps the original audio outside the masked ranges untouched, at its
-original level.
+Every mode replaces the audio inside the masked ranges and leaves the rest in
+place. The audio stream itself is re-encoded — AAC, Opus or MP3 depending on the
+container — so the whole track is decoded and encoded again and lossy formats
+lose a little quality everywhere, not only inside the masked ranges. The video
+stream is still copied bit-for-bit. When you need the untouched parts to stay
+bit-exact, write to `.wav` or `.flac` (or pass a lossless `--audio-codec`).
 
 ## Transcript formats
 
@@ -115,11 +119,12 @@ Supported JSON shapes: `faster-whisper` / `openai-whisper` (`segments` with or
 without `words`), flat `{"words": [...]}`, a bare list of segments, and
 `whisper.cpp` output (`transcription[].offsets` in milliseconds).
 
-SRT/VTT only carry cue level timing, so per-word ranges are an estimate
-proportional to word length. That is accurate to a few tens of milliseconds
-inside a cue — usually enough for a bleep, never enough to hide a whole
-sentence. Use Whisper JSON (`--word-timestamps` in your transcription step) when
-you need millisecond accuracy.
+SRT/VTT only carry cue level timing, so per-word ranges are an approximation:
+the cue duration is split between its words in proportion to word length. Real
+speech has pauses, uneven pacing and long words, so the estimated boundaries can
+be off by much more than a few milliseconds. That is usually good enough for a
+bleep, but treat the timings as approximate and use Whisper JSON word timings
+when the placement needs to be precise.
 
 ## Options
 
@@ -158,17 +163,35 @@ output:
 Exit codes: `0` success (including "nothing matched", which remuxes the file
 untouched), `1` runtime error, `2` bad command line.
 
+`--dry-run` writes nothing at all: no output file, no audit CSV, no censored
+subtitles and no retained filter script. With `--json` it prints exactly one
+JSON document (the graph is in `filter_graph`), so `... --dry-run --json | jq`
+works.
+
+Every output path (`--output`, `--audit`, `--clean-subtitles`,
+`--keep-filter-script`) is checked before anything is written. It must differ
+from the input, from the transcript and from every other output, so a typo can
+never overwrite the source media or subtitles.
+
 ## Word lists
 
-One entry per line, `#` starts a comment:
+One entry per line. A line that starts with `#` is a comment; comments must be
+on their own line, because `#` can be part of a regular expression:
 
 ```
 # obvious demo words only
 shit
 son of a bitch
-re:fuck\w*        # regular expression, opt in with the re: prefix
-re:s+h+i+t+       # stretched spellings
+# regular expression, opt in with the re: prefix
+re:fuck\w*
+# stretched spellings
+re:s+h+i+t+
 ```
+
+An argument that clearly looks like a file (`badwords.txt`, a path containing a
+separator, or a `~`/`.` prefix) must exist; a typo is an error instead of being
+silently used as a literal word. Bare comma-free words such as `-w shit` are
+still treated as an inline list.
 
 * Literal entries match **whole words**, case-insensitively, with Turkish
   `I/İ/ı` folding and `ğ/ş/ç/ö/ü` reduced to their ASCII base, so a transcript
@@ -246,8 +269,8 @@ before it gives up — so it also works in a fresh checkout where
 bootstrap off and fail fast instead. Integration tests render real audio with
 FFmpeg and verify the 1 kHz beep with a DFT, that no sample step exceeds the
 natural slope of the tone (click test), and that the video stream MD5 is
-unchanged. They skip automatically when FFmpeg is missing; nothing in the test
-suite touches the network.
+unchanged. The suite fails early if FFmpeg is not on `PATH` instead of silently
+skipping every integration test; nothing in the test suite touches the network.
 
 Layout:
 
@@ -275,4 +298,4 @@ audio_censor/
 
 ## License
 
-MIT © 2026 YusufBeratZengin. See [LICENSE](LICENSE).
+MIT © 2026 Yusuf Berat Zengin. See [LICENSE](LICENSE).

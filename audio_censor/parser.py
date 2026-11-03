@@ -345,22 +345,32 @@ def load_transcript(path: str | Path, *, format: str | None = None) -> Transcrip
 
 
 def shift_transcript(transcript: Transcript, offset: float) -> Transcript:
-    """Return a copy of ``transcript`` moved by ``offset`` seconds."""
+    """Return a copy of ``transcript`` moved by ``offset`` seconds.
+
+    The shifted cue words are the very same objects that make up the returned
+    ``transcript.words``.  :func:`audio_censor.subtitles.render_clean_srt`
+    maps masked word indices by object identity, so shifting the two views
+    independently would silently leave every subtitle word unmasked.
+    """
     if offset == 0:
         return transcript
+
+    def shifted(word: Word) -> Word:
+        return replace(word, start=word.start + offset, end=word.end + offset)
+
     cues = tuple(
         replace(
             cue,
             start=cue.start + offset,
             end=cue.end + offset,
-            words=tuple(
-                replace(word, start=word.start + offset, end=word.end + offset)
-                for word in cue.words
-            ),
+            words=tuple(shifted(word) for word in cue.words),
         )
         for cue in transcript.cues
     )
     words = tuple(
-        replace(word, start=word.start + offset, end=word.end + offset) for word in transcript.words
+        sorted(
+            (word for cue in cues for word in cue.words),
+            key=lambda word: (word.start, word.end),
+        )
     )
     return replace(transcript, cues=cues, words=words)
