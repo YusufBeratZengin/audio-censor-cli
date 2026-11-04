@@ -12,7 +12,7 @@ from typing import TextIO
 
 from . import __version__
 from .audit import write_audit
-from .engine import CommandResult, Engine, MediaInfo, format_argv
+from .engine import CommandResult, Engine, MediaInfo, format_argv, same_file
 from .errors import AudioCensorError, ConfigError
 from .filter_builder import AudioParams, build_filter_graph
 from .matcher import BadWordMatcher, Interval, Match, build_intervals, resolve_words
@@ -215,7 +215,12 @@ class _Reporter:
 
 
 def _check_output_paths(options: CliOptions) -> None:
-    """Refuse to overwrite a source file or to reuse one output path twice."""
+    """Refuse to overwrite a source file or to reuse one output path twice.
+
+    Paths are compared by name *and* by file identity: two hard links name the
+    same inode, so a name-only comparison would let FFmpeg's ``-y`` truncate the
+    source through its second name.
+    """
     sources = {"input path": options.input, "transcript path": options.subtitles}
     outputs: list[tuple[str, Path]] = [("output path", options.output)]
     if options.audit is not None:
@@ -225,15 +230,16 @@ def _check_output_paths(options: CliOptions) -> None:
     if options.keep_script is not None:
         outputs.append(("--keep-filter-script path", options.keep_script))
 
-    seen: dict[Path, str] = {}
+    seen: list[tuple[Path, str]] = []
     for label, path in outputs:
         resolved = path.resolve()
         for source_label, source in sources.items():
-            if resolved == source.resolve():
+            if resolved == source.resolve() or same_file(path, source):
                 raise ConfigError(f"{label} must differ from the {source_label}: {path}")
-        if resolved in seen:
-            raise ConfigError(f"{label} is the same path as the {seen[resolved]}: {path}")
-        seen[resolved] = label
+        for other, other_label in seen:
+            if resolved == other or same_file(path, other):
+                raise ConfigError(f"{label} is the same file as the {other_label}: {path}")
+        seen.append((resolved, label))
 
 
 def _validate(options: CliOptions) -> None:

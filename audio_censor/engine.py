@@ -59,6 +59,21 @@ AUDIO_ENCODERS: dict[str, tuple[str | None, str | None]] = {
 _FASTSTART_SUFFIXES = {".mp4", ".m4a", ".m4v", ".mov"}
 
 
+def same_file(first: str | Path, second: str | Path) -> bool:
+    """True when both paths name the same file on disk.
+
+    ``Path.resolve`` folds ``..``, symlinks and (on Windows) the drive letter,
+    but two hard links share one inode under different names — a string
+    comparison would not see it, and FFmpeg's ``-y`` would truncate the source.
+    ``Path.samefile`` compares the file identity instead.  A path that does not
+    exist (or cannot be stat'ed) is simply not the same file.
+    """
+    try:
+        return Path(first).samefile(Path(second))
+    except (OSError, ValueError):
+        return False
+
+
 def _as_float(value: Any) -> float | None:
     try:
         number = float(value)
@@ -208,6 +223,13 @@ class Engine:
     def probe(self, path: str | Path) -> MediaInfo:
         return probe(path, ffprobe=self.ffprobe)
 
+    def _refuse_overwriting_input(self, input_path: str | Path, output_path: str | Path) -> None:
+        """Stop before FFmpeg truncates its own input through a second name."""
+        if same_file(input_path, output_path):
+            raise FFmpegError(
+                f"refusing to write {output_path}: it is the same file as the input {input_path}"
+            )
+
     @property
     def script_option(self) -> str:
         if self._script_option is None:
@@ -309,6 +331,7 @@ class Engine:
         timeout: float | None = None,
     ) -> CommandResult:
         """Render ``graph`` and mux it with the untouched video stream."""
+        self._refuse_overwriting_input(input_path, output_path)
         option = self.script_option
         workdir: str | None = None
         script_path: str | Path | None = None
@@ -341,6 +364,7 @@ class Engine:
         output_path: str | Path,
         timeout: float | None = None,
     ) -> CommandResult:
+        self._refuse_overwriting_input(input_path, output_path)
         argv = self.build_copy_argv(input_path=input_path, output_path=output_path)
         return self._execute(argv, timeout=timeout)
 

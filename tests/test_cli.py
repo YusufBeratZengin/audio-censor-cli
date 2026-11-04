@@ -566,6 +566,34 @@ class TestErrors:
         assert run_cli(audio_file, "-s", srt_file, "-w", words_file, "-o", audio_file) == 1
         assert "must differ" in capsys.readouterr().err
 
+    def test_output_hard_linked_to_the_input_is_refused(
+        self, audio_file: Path, srt_file: Path, words_file: Path, tmp_path: Path, capsys
+    ) -> None:
+        # A hard link has a different name for the same inode, so comparing
+        # resolved path strings would let FFmpeg's -y truncate the source.
+        link = tmp_path / "linked-input.wav"
+        try:
+            os.link(audio_file, link)
+        except (OSError, NotImplementedError):
+            pytest.skip("this filesystem does not support hard links")
+        before = audio_file.read_bytes()
+        assert run_cli(audio_file, "-s", srt_file, "-w", words_file, "-o", link) == 1
+        assert "must differ from the input path" in capsys.readouterr().err
+        assert audio_file.read_bytes() == before
+
+    def test_audit_hard_linked_to_the_input_is_refused(
+        self, audio_file: Path, srt_file: Path, words_file: Path, tmp_path: Path, capsys
+    ) -> None:
+        link = tmp_path / "linked-audit.csv"
+        try:
+            os.link(audio_file, link)
+        except (OSError, NotImplementedError):
+            pytest.skip("this filesystem does not support hard links")
+        before = audio_file.read_bytes()
+        assert run_cli(audio_file, "-s", srt_file, "-w", words_file, "--audit", link) == 1
+        assert "--audit path must differ from the input path" in capsys.readouterr().err
+        assert audio_file.read_bytes() == before
+
     def test_audit_cannot_overwrite_the_input(
         self, audio_file: Path, srt_file: Path, words_file: Path, capsys
     ) -> None:
@@ -609,7 +637,7 @@ class TestErrors:
             )
             == 1
         )
-        assert "is the same path" in capsys.readouterr().err
+        assert "is the same file as the" in capsys.readouterr().err
 
     def test_keep_filter_script_cannot_overwrite_the_output(
         self, audio_file: Path, srt_file: Path, words_file: Path, tmp_path: Path, capsys
@@ -629,7 +657,7 @@ class TestErrors:
             )
             == 1
         )
-        assert "is the same path" in capsys.readouterr().err
+        assert "is the same file as the" in capsys.readouterr().err
 
     def test_missing_word_file_is_an_error(
         self, audio_file: Path, srt_file: Path, tmp_path: Path, capsys

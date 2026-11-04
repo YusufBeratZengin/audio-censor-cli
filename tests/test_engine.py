@@ -224,6 +224,39 @@ class TestCommandAssembly:
         assert shlex.split(format_argv(["ffmpeg", "-i", "a b.mp4"])) == ["ffmpeg", "-i", "a b.mp4"]
 
 
+class TestSameFileGuard:
+    """The engine is a public API: it must never render over its own input."""
+
+    def test_remux_refuses_a_hard_link_to_the_input(self, tmp_path: Path) -> None:
+        source = tmp_path / "source.wav"
+        source.write_bytes(b"RIFF0000WAVE")
+        link = tmp_path / "link.wav"
+        try:
+            link.hardlink_to(source)
+        except (OSError, NotImplementedError):
+            pytest.skip("this filesystem does not support hard links")
+        with pytest.raises(FFmpegError, match="same file"):
+            Engine().remux(input_path=source, output_path=link)
+        assert source.read_bytes() == b"RIFF0000WAVE"
+
+    def test_run_refuses_a_hard_link_to_the_input(self, tmp_path: Path) -> None:
+        source = tmp_path / "source.wav"
+        source.write_bytes(b"RIFF0000WAVE")
+        link = tmp_path / "link.wav"
+        try:
+            link.hardlink_to(source)
+        except (OSError, NotImplementedError):
+            pytest.skip("this filesystem does not support hard links")
+        with pytest.raises(FFmpegError, match="same file"):
+            Engine().run(
+                input_path=source,
+                output_path=link,
+                media=MEDIA,
+                graph="[0:a]anull[aout]",
+            )
+        assert source.read_bytes() == b"RIFF0000WAVE"
+
+
 @requires_ffmpeg
 class TestExecution:
     def test_run_writes_output_and_keeps_script(self, audio_file: Path, tmp_path: Path) -> None:
