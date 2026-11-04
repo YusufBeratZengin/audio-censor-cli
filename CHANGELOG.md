@@ -37,6 +37,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   produced the output file. A failed render no longer leaves a report for audio
   that was never made, and the truncated container FFmpeg leaves behind is
   removed instead of looking like a finished output.
+- Output files are published atomically. `Engine.run` and `Engine.remux` render
+  into a hidden staging file next to the target and rename it onto the requested
+  path only after FFmpeg exits `0`. Previously `-y` truncated an existing output
+  before the encode started and the failure path then deleted it, so a failed
+  render (or a missing FFmpeg binary) destroyed the previous result. Now the old
+  file stays byte-identical and only the staging file is removed.
 - `scripts/check.sh` stops with an explicit error when FFmpeg or FFprobe is
   missing instead of running 50+ skipped render tests into a confusing coverage
   failure. `FFMPEG`/`FFPROBE` may point at binaries outside `PATH`.
