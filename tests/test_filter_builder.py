@@ -49,6 +49,14 @@ class TestBuilderValidation:
         with pytest.raises(ConfigError, match="frequency"):
             FilterBuilder(PARAMS, beep_freq=0)
 
+    def test_non_finite_fade_and_frequency(self) -> None:
+        # ``nan`` slips through every ``<``/``>`` comparison, so these need an
+        # explicit finiteness check instead of a range check.
+        with pytest.raises(ConfigError, match="fade must be a finite"):
+            FilterBuilder(PARAMS, fade_ms=float("nan"))
+        with pytest.raises(ConfigError, match="beep frequency must be a finite"):
+            FilterBuilder(PARAMS, beep_freq=float("nan"))
+
     @pytest.mark.parametrize("volume", [0.0, 1.5])
     def test_bad_volume(self, volume: float) -> None:
         with pytest.raises(ConfigError, match="volume"):

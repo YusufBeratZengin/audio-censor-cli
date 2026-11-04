@@ -10,6 +10,7 @@ import struct
 import subprocess
 import sys
 import wave
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -25,7 +26,8 @@ from conftest import (
 )
 
 from audio_censor import __version__
-from audio_censor.cli import build_parser, main, parse_args
+from audio_censor.cli import build_parser, execute, main, parse_args
+from audio_censor.errors import ConfigError
 
 
 def write_tone_wav(path: Path, segments: list[tuple[float, float]], rate: int = 48000) -> None:
@@ -681,6 +683,48 @@ class TestErrors:
         assert run_cli(audio_file, "-s", srt_file, "-w", words_file, "--fade-ms", "-5") == 1
         assert "fade-ms" in capsys.readouterr().err
 
+    @pytest.mark.parametrize(
+        ("option", "value"),
+        [
+            ("--max-gap-ms", "nan"),
+            ("--max-gap-ms", "inf"),
+            ("--fade-ms", "NaN"),
+            ("--pad-ms", "inf"),
+            ("--offset-ms", "Infinity"),
+            ("--beep-freq", "nan"),
+            ("--beep-volume", "nan"),
+        ],
+    )
+    def test_non_finite_numbers_exit_two(
+        self,
+        audio_file: Path,
+        srt_file: Path,
+        words_file: Path,
+        option: str,
+        value: str,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        # argparse's float() accepts nan/inf; passing them on would defeat
+        # every range check downstream (e.g. --max-gap-ms nan turns the pause
+        # guard into a no-op and a phrase matches across minutes of silence).
+        assert run_cli(audio_file, "-s", srt_file, "-w", words_file, option, value) == 2
+        assert "finite" in capsys.readouterr().err
+
+    def test_non_numeric_float_option_exits_two(
+        self, audio_file: Path, srt_file: Path, words_file: Path, capsys
+    ) -> None:
+        assert run_cli(audio_file, "-s", srt_file, "-w", words_file, "--fade-ms", "abc") == 2
+        assert "not a number" in capsys.readouterr().err
+
+    def test_library_caller_cannot_bypass_the_finite_check(
+        self, audio_file: Path, srt_file: Path, words_file: Path
+    ) -> None:
+        # ``parse_args`` rejects nan, but ``CliOptions`` is also built by code
+        # that imports the package; ``execute`` must not trust its caller.
+        options = parse_args([str(audio_file), "-s", str(srt_file), "-w", str(words_file)])
+        with pytest.raises(ConfigError, match="--max-gap-ms must be a finite number"):
+            execute(replace(options, max_gap_ms=float("nan")))
+
     def test_invalid_volume(
         self, audio_file: Path, srt_file: Path, words_file: Path, capsys
     ) -> None:
@@ -692,6 +736,30 @@ class TestErrors:
     ) -> None:
         assert run_cli(audio_file, "-s", srt_file, "-w", words_file, "--fuzzy", "-1") == 1
         assert "fuzzy" in capsys.readouterr().err
+
+    @requires_ffmpeg
+    def test_beep_frequency_above_nyquist_is_refused(
+        self, audio_file: Path, srt_file: Path, words_file: Path, tmp_path: Path, capsys
+    ) -> None:
+        # Above fs/2 a sine folds back to another pitch, so the output would
+        # not contain the requested tone at all.
+        output = tmp_path / "aliased.wav"
+        assert (
+            run_cli(
+                audio_file,
+                "-s",
+                srt_file,
+                "-w",
+                words_file,
+                "-o",
+                output,
+                "--beep-freq",
+                "30000",
+            )
+            == 1
+        )
+        assert "Nyquist" in capsys.readouterr().err
+        assert not output.exists()
 
     def test_broken_ffmpeg_binary(
         self, audio_file: Path, srt_file: Path, words_file: Path, capsys

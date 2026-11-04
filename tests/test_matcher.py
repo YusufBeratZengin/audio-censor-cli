@@ -133,6 +133,14 @@ class TestMatching:
         with pytest.raises(ConfigError, match="max_gap"):
             BadWordMatcher(["fuck"], max_gap=0)
 
+    def test_non_finite_max_gap_is_rejected(self) -> None:
+        # ``nan`` makes ``gap > max_gap`` false for every pair, so a multi word
+        # phrase would match across any pause; ``inf`` disables the pause check
+        # for good.  Both must be refused when the matcher is built.
+        for value in (float("nan"), float("inf"), float("-inf")):
+            with pytest.raises(ConfigError, match="max_gap must be a finite"):
+                BadWordMatcher(["son of"], max_gap=value)
+
     def test_empty_transcript(self) -> None:
         assert BadWordMatcher(["fuck"]).find(()) == []
 
@@ -238,6 +246,14 @@ class TestIntervals:
     def test_negative_fade_rejected(self) -> None:
         with pytest.raises(ConfigError, match="fade"):
             build_intervals([self.match(1.0, 2.0)], fade=-0.1)
+
+    def test_non_finite_pad_and_fade_rejected(self) -> None:
+        # A NaN pad would turn every bound into NaN and drop every interval
+        # silently; a NaN fade would make the merge gap NaN and never merge.
+        with pytest.raises(ConfigError, match="pad must be a finite"):
+            build_intervals([self.match(1.0, 2.0)], pad=float("nan"))
+        with pytest.raises(ConfigError, match="fade must be a finite"):
+            build_intervals([self.match(1.0, 2.0)], fade=float("inf"))
 
     def test_empty(self) -> None:
         assert build_intervals([]) == []

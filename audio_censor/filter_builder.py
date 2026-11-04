@@ -72,10 +72,14 @@ class FilterBuilder:
     def __post_init__(self) -> None:
         if self.mode not in MODES:
             raise ConfigError(f"unknown mode {self.mode!r}; expected one of {', '.join(MODES)}")
+        if not math.isfinite(self.fade_ms):
+            raise ConfigError("fade must be a finite number of milliseconds")
         if self.fade_ms < 0:
             raise ConfigError("fade must be zero or positive")
         if self.fade_ms > 500:
             raise ConfigError("fade must not exceed 500 ms")
+        if not math.isfinite(self.beep_freq):
+            raise ConfigError("beep frequency must be a finite number of Hz")
         if self.beep_freq <= 0:
             raise ConfigError("beep frequency must be positive")
         if not 0 < self.beep_volume <= 1:

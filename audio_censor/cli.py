@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 import time
 from dataclasses import dataclass
@@ -53,6 +54,23 @@ class CliOptions:
     transcript_format: str | None
 
 
+def _finite_float(text: str) -> float:
+    """``argparse`` type that refuses ``nan`` and ``inf``.
+
+    ``float()`` happily accepts both, but they poison every later range check:
+    ``nan`` compares false against ``<`` and ``>`` (so ``--max-gap-ms nan``
+    silently disables the pause guard and a phrase matches across minutes of
+    silence) and ``inf`` defeats the same guard from the other side.
+    """
+    try:
+        value = float(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not a number: {text!r}") from None
+    if not math.isfinite(value):
+        raise argparse.ArgumentTypeError(f"must be a finite number, got {text!r}")
+    return value
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=PROGRAM,
@@ -91,25 +109,25 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-o", "--output", type=Path, help="output file (default: <input>.censored)")
     parser.add_argument(
         "--fade-ms",
-        type=float,
+        type=_finite_float,
         default=5.0,
         help="micro fade length at every masking edge, in ms (default: 5)",
     )
     parser.add_argument(
         "--pad-ms",
-        type=float,
+        type=_finite_float,
         default=0.0,
         help="extend every masked range by this many ms on both sides (default: 0)",
     )
     parser.add_argument(
         "--offset-ms",
-        type=float,
+        type=_finite_float,
         default=0.0,
         help="shift the whole transcript by this many ms (negative values allowed)",
     )
     parser.add_argument(
         "--max-gap-ms",
-        type=float,
+        type=_finite_float,
         default=1500.0,
         help="maximum silence between words of a multi word phrase (default: 1500)",
     )
@@ -120,9 +138,14 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="N",
         help="also match words within N edits, e.g. --fuzzy 1 (default: 0, off)",
     )
-    parser.add_argument("--beep-freq", type=float, default=1000.0, help="bleep frequency in Hz")
     parser.add_argument(
-        "--beep-volume", type=float, default=0.3, help="bleep amplitude between 0 and 1"
+        "--beep-freq", type=_finite_float, default=1000.0, help="bleep frequency in Hz"
+    )
+    parser.add_argument(
+        "--beep-volume",
+        type=_finite_float,
+        default=0.3,
+        help="bleep amplitude between 0 and 1",
     )
     parser.add_argument("--audit", type=Path, help="write a CSV audit log of every masked word")
     parser.add_argument(
@@ -250,6 +273,19 @@ def _validate(options: CliOptions) -> None:
     if not options.subtitles.exists():
         raise ConfigError(f"transcript not found: {options.subtitles}")
     _check_output_paths(options)
+    # The parser already rejects nan/inf (see ``_finite_float``), but
+    # ``CliOptions`` is public enough that a library caller can build one
+    # directly; keep the same guarantee here instead of trusting the parser.
+    for label, value in (
+        ("--fade-ms", options.fade_ms),
+        ("--pad-ms", options.pad_ms),
+        ("--offset-ms", options.offset_ms),
+        ("--max-gap-ms", options.max_gap_ms),
+        ("--beep-freq", options.beep_freq),
+        ("--beep-volume", options.beep_volume),
+    ):
+        if not math.isfinite(value):
+            raise ConfigError(f"{label} must be a finite number")
     if options.fade_ms < 0:
         raise ConfigError("--fade-ms must be zero or positive")
     if options.pad_ms < 0:
@@ -420,6 +456,13 @@ def execute(options: CliOptions, stdout: TextIO | None = None, stderr: TextIO | 
         f"media: {media.duration:.3f}s, {media.sample_rate} Hz, {media.channels} ch, "
         f"{'video copied' if media.has_video else 'audio only'}"
     )
+    if options.mode == "bleep" and options.beep_freq >= media.sample_rate / 2:
+        # A tone at or above Nyquist folds back to a different pitch, so the
+        # promised "1 kHz style beep" would come out as an aliased whistle.
+        raise ConfigError(
+            f"--beep-freq {options.beep_freq:g} Hz is not below the Nyquist frequency "
+            f"of this {media.sample_rate} Hz stream; choose a lower tone"
+        )
     if transcript.duration > media.duration + 1.0:
         reporter.warn(
             f"transcript ends at {format_timecode(transcript.duration)} but the media is only "

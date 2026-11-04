@@ -16,6 +16,7 @@ misspelled shout-outs such as ``salllaaak``.
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -146,8 +147,11 @@ class BadWordMatcher:
     ) -> None:
         if fuzzy < 0:
             raise ConfigError("fuzzy distance must be zero or positive")
-        if max_gap <= 0:
-            raise ConfigError("max_gap must be positive")
+        if not math.isfinite(max_gap) or max_gap <= 0:
+            # ``nan`` would make ``gap > max_gap`` false for every pair and
+            # ``inf`` would remove the pause check: both silently turn a multi
+            # word phrase into a match that spans unrelated speech.
+            raise ConfigError("max_gap must be a finite, positive number of seconds")
         self.fuzzy = fuzzy
         self.max_gap = max_gap
         self.patterns = self._compile(list(words))
@@ -267,10 +271,10 @@ def build_intervals(
     Intervals closer than the fade length are merged, otherwise the two fade
     ramps would overlap and the gain envelope would never reach zero.
     """
-    if pad < 0:
-        raise ConfigError("pad must be zero or positive")
-    if fade < 0:
-        raise ConfigError("fade must be zero or positive")
+    if not math.isfinite(pad) or pad < 0:
+        raise ConfigError("pad must be a finite, non-negative number of seconds")
+    if not math.isfinite(fade) or fade < 0:
+        raise ConfigError("fade must be a finite, non-negative number of seconds")
 
     raw: list[Interval] = []
     for match in matches:
