@@ -55,6 +55,31 @@ for tool_var in FFMPEG FFPROBE; do
 done
 export PATH
 
+# GUI installers (winget, Chocolatey, Scoop, the zip builds) update the machine
+# PATH but not the environment of a shell that was already open, so a plain
+# `bash scripts/check.sh` can miss a perfectly good FFmpeg.  Look in the usual
+# directories before failing; $FFMPEG/$FFPROBE above still take precedence.
+if ! command -v ffmpeg >/dev/null 2>&1; then
+  FFMPEG_CANDIDATES=(
+    "${LOCALAPPDATA:-}/Microsoft/WinGet/Links"
+    "/c/ProgramData/chocolatey/bin"
+    "${USERPROFILE:-}/scoop/shims"
+    "$HOME/scoop/shims"
+    "/c/ffmpeg/bin"
+    "/opt/homebrew/bin"
+    "/usr/local/bin"
+  )
+  for candidate in "${FFMPEG_CANDIDATES[@]}"; do
+    [ -n "$candidate" ] && [ -d "$candidate" ] || continue
+    if [ -x "$candidate/ffmpeg" ] || [ -x "$candidate/ffmpeg.exe" ]; then
+      PATH="$candidate:$PATH"
+      export PATH
+      echo "note: using FFmpeg from $candidate (not on the inherited PATH)" >&2
+      break
+    fi
+  done
+fi
+
 for tool_name in ffmpeg ffprobe; do
   if ! command -v "$tool_name" >/dev/null 2>&1; then
     echo "error: $tool_name was not found on PATH" >&2
