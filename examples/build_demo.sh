@@ -79,3 +79,10 @@ for file in podcast.mp4 clean.mp4; do
   printf '  %-12s ' "$file"
   ffmpeg -v error -i "$file" -map 0:v -c copy -f md5 -
 done
+
+# The same clip and word list with the word level transcript from examples/.
+# These boundaries come from the file, not from cue duration guessing: both
+# READMEs quote the ranges this command prints.
+echo
+echo "exact word timings from examples/whisper-demo.json:"
+"${COMMAND[@]}" podcast.mp4   --subtitles podcast.json   --words badwords.txt   -o whisper-clean.mp4
