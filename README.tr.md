@@ -2,7 +2,7 @@
 
 **Elindeki altyazıyı kullanarak ses ve videodaki küfürlü sözcükleri bip sesiyle, sessizlikle ya da ters çevrilmiş sesle maskeleyen komut satırı aracı.** Konuşma tanıma modeli yok, videoyu yeniden kodlamak yok.
 
-Elindeki podcast, YouTube çıktısı veya çağrı kaydını; yanında SRT, VTT ya da Whisper JSON dökümüyle birlikte ver. Araç her küfürlü sözcüğü 1 kHz bip, sessizlik veya tersten çalınan ses ile değiştirir. Video akışı bit bit kopyalanır (`-c:v copy`), yani 20 dakikalık 1080p bir dosya dakikalar değil saniyeler içinde biter.
+Elindeki podcast, YouTube çıktısı veya çağrı kaydını; yanında SRT, VTT ya da Whisper JSON dökümüyle birlikte ver. Araç her küfürlü sözcüğü 1 kHz bip, sessizlik veya tersten çalınan ses ile değiştirir. Video akışı bit bit kopyalanır (`-c:v copy`), yani yalnızca ses yeniden kodlanır: ölçülen bir çalıştırmada 20 dakikalık 48 kHz stereo ses 38 saniyede, 60 saniyelik 1080p klip ise video akışı aynı MD5 ile korunarak 2,95 saniyede işlendi.
 
 ```console
 $ audio-censor podcast.mp4 -s podcast.vtt -w badwords.txt --mode bleep -o clean.mp4
@@ -60,13 +60,13 @@ info: censored subtitles: clean.srt
 ok: beeps mixed in: clean.mp4 (0.90s)
 ```
 
-Video akışının gerçekten kopyalandığını sıkıştırılmış paketlerin MD5'i ile doğrulayabilirsin:
+Video akışının gerçekten kopyalandığını sıkıştırılmış paketlerin MD5'i ile doğrulayabilirsin (onaltılık değer FFmpeg/x264 derlemesine göre değişir; önemli olan iki satırın aynı olması):
 
 ```console
 $ ffmpeg -v error -i podcast.mp4 -map 0:v -c copy -f md5 -
-MD5=e8506763944e873c5f880a5cc8b32192
+MD5=aa1eebdecacd6370eecc3a934725419f
 $ ffmpeg -v error -i clean.mp4 -map 0:v -c copy -f md5 -
-MD5=e8506763944e873c5f880a5cc8b32192
+MD5=aa1eebdecacd6370eecc3a934725419f
 ```
 
 Bip sesi de ölçülebilir: eski kelimenin yerinde 1 kHz, dosyanın geri kalanında orijinal 440 Hz tonu var. Dosyadaki en büyük ardışık örnek farkı 0.039; bu, 0.3 genlikli 1 kHz sinüsün doğal eğimi. Yani tıklama/patlama yok.
@@ -160,6 +160,21 @@ Bunun sonuçları:
 
 `reverse` modu `asplit` kopyasından `atrim` dilimleri alıp `areverse` uygular; bellek dosya uzunluğuyla değil maskelenen konuşmayla orantılıdır.
 
+## Performans
+
+Tek bir makinede ölçüldü (Windows 11, Python 3.11.9, FFmpeg n9.0.1), `time
+python3 -m audio_censor ...` ile; süreler FFprobe ve mux dahil duvar saati:
+
+| Girdi | Maskelenen aralık | Çıktı | Süre |
+|---|---|---|---|
+| 20 dk, 48 kHz stereo WAV | 120 bip | 28 MB M4A (AAC 192k) | 38 sn |
+| 60 sn, 1080p H.264 + AAC | 6 bip | video MD5 aynı, AAC ses | 2,95 sn |
+
+Baskın maliyet sesin çözülüp yeniden kodlanması; video akış kopyası olduğu için
+daha uzun görüntü kodlama değil dosya kopyalama maliyeti getirir. Disk, CPU ve
+FFmpeg derlemesi bu sayıları değiştirir. Süre çözünürlükle değil ses süresiyle
+büyür.
+
 ## Sınırlar (bunu oku)
 
 * **Döküm senkron olmalı.** Her şey bir saniye kaymışsa `--offset-ms -1000` kullan. Araç, döküm medyadan uzun bittiğinde uyarır.
@@ -174,6 +189,12 @@ Bunun sonuçları:
 python3 -m pip install -e ".[dev]"
 bash scripts/check.sh        # lint + biçim + tip + test + kapsam eşiği
 ```
+
+FFmpeg ve FFprobe zorunlu: kapı, render testleri atlanıp kapsam eşiği
+düşmesin diye açık bir hata verip durur. İkili dosyalar `PATH`'te değilse
+`FFMPEG=/yol/ffmpeg` ve `FFPROBE=/yol/ffprobe` ile göster; `scripts/check.sh`
+bulundukları dizini `PATH`'in başına ekler. Geliştirme aracı sürümleri
+`requirements-dev.txt` içinde sabitlenmiştir ve CI bu dosyayı kurar.
 
 Testler `audio_censor` paketini doğrudan kopyadan içe aktarır (`pyproject.toml`
 içinde `pythonpath = ["."]`), yani düzenlenebilir kurulum yapılmadan da
