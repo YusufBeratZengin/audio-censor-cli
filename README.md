@@ -152,6 +152,38 @@ be off by much more than a few milliseconds. That is usually good enough for a
 bleep, but treat the timings as approximate and use Whisper JSON word timings
 when the placement needs to be precise.
 
+### Exact word timings, and looking before you publish
+
+Generate the transcript once with word level timestamps, then check the ranges
+before anything is rendered. `--dry-run` prints the FFmpeg command and the match
+table and writes no files at all:
+
+```bash
+whisper podcast.mp3 --model small --word_timestamps True --output_format json
+
+audio-censor podcast.mp4 -s podcast.json -w badwords.txt --dry-run   # what would be masked?
+audio-censor podcast.mp4 -s podcast.json -w badwords.txt -o clean.mp4
+```
+
+`examples/whisper-demo.json` is a complete sample of that JSON shape (fake
+transcript, shipped with the repo). Run against the clip produced by
+`examples/build_demo.sh`, it reports the boundaries written in the file:
+
+```console
+$ audio-censor podcast.mp4 -s podcast.json -w badwords.txt -o clean.mp4
+info: transcript: podcast.json (whisper, 4 cues, 19 words)
+info: media: 20.000s, 48000 Hz, 1 ch, video copied
+info: 2 match(es) -> 2 masked range(s) in bleep mode
+  #1   00:00:09.620 - 00:00:10.020 (0.400s)  'shit'  cue 2
+  #2   00:00:15.320 - 00:00:16.200 (0.880s)  'fucking'  cue 3
+ok: beeps mixed in: clean.mp4 (1.03s)
+```
+
+Those two ranges are the ones stored in the JSON -- `9.62` s became `9.620` s,
+not an estimate. With an SRT or VTT transcript the same command prints wider,
+guessed ranges: run the dry run first, listen at the printed timecodes, and add
+`--pad-ms 50` when a beep starts just after the word does.
+
 ## Options
 
 ```
@@ -263,6 +295,12 @@ The beep (or the reversed slice) is mixed on top with `amix`. Consequences:
 
 `reverse` takes `atrim` slices of an `asplit` copy before `areverse`, so memory
 is proportional to the masked speech, not to the file length.
+
+The output is all-or-nothing: FFmpeg writes to a hidden staging file next to the
+target (`.<name>.<pid>-<token>.part<suffix>`) and the finished file is renamed
+onto the requested path in one `os.replace` step. A missing binary, a timeout or
+a failed encode therefore leaves the target untouched -- in particular, an
+output file from an earlier run is never truncated by `-y` and then deleted.
 
 ## Performance
 

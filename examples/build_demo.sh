@@ -59,6 +59,12 @@ shit
 re:fuck\w*
 WORDS
 
+# The same clip with a word level Whisper JSON transcript (fake words, real
+# word timings).  The READMEs use this pair for the "exact word timings"
+# example; the JSON ships with the repo so the numbers in the docs are
+# reproducible.
+cp "$REPO_ROOT/examples/whisper-demo.json" podcast.json
+
 "${COMMAND[@]}" podcast.mp4 \
   --subtitles podcast.vtt \
   --words badwords.txt \

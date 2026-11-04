@@ -115,6 +115,38 @@ hata olarak bildirilir.
 
 SRT ve VTT yalnızca replik düzeyinde zaman taşır; bu yüzden kelime aralıkları yaklaşıktır: replik süresi kelimelere uzunluklarına göre paylaştırılır. Gerçek konuşmada duraklamalar, düzensiz hız ve uzun kelimeler vardır; tahmin edilen sınırlar birkaç milisaniyeden çok daha fazla sapabilir. Bu çoğu bip için yeterlidir, ama zamanları yaklaşık kabul edin ve yerleşimin kesin olması gerekiyorsa Whisper JSON kelime zamanlarını kullanın.
 
+### Kesin kelime zamanları ve yayından önce gözle kontrol
+
+Dökümü bir kez kelime düzeyinde zaman damgalarıyla üretin, sonra hiçbir şey
+render edilmeden önce aralıklara bakın. `--dry-run` FFmpeg komutunu ve eşleşme
+tablosunu basar, hiçbir dosya yazmaz:
+
+```bash
+whisper podcast.mp3 --model small --word_timestamps True --output_format json
+
+audio-censor podcast.mp4 -s podcast.json -w badwords.txt --dry-run   # ne maskelenecek?
+audio-censor podcast.mp4 -s podcast.json -w badwords.txt -o clean.mp4
+```
+
+`examples/whisper-demo.json` bu JSON biçiminin tam bir örneğidir (sahte döküm,
+depoyla birlikte gelir). `examples/build_demo.sh` ile üretilen klipte
+çalıştırıldığında, dosyada yazılı olan sınırları bildirir:
+
+```console
+$ audio-censor podcast.mp4 -s podcast.json -w badwords.txt -o clean.mp4
+info: transcript: podcast.json (whisper, 4 cues, 19 words)
+info: media: 20.000s, 48000 Hz, 1 ch, video copied
+info: 2 match(es) -> 2 masked range(s) in bleep mode
+  #1   00:00:09.620 - 00:00:10.020 (0.400s)  'shit'  cue 2
+  #2   00:00:15.320 - 00:00:16.200 (0.880s)  'fucking'  cue 3
+ok: beeps mixed in: clean.mp4 (1.03s)
+```
+
+Bu iki aralık JSON'da duran değerlerdir: `9.62` saniye `9.620` olarak çıktı,
+tahmin değil. SRT veya VTT dökümüyle aynı komut daha geniş, tahmini aralıklar
+basar: önce dry run çalıştırın, yazdırılan zaman kodlarında dinleyin, bip
+kelimeden hemen sonra başlıyorsa `--pad-ms 50` ekleyin.
+
 ## Seçenekler
 
 ```
@@ -190,6 +222,8 @@ Bunun sonuçları:
 
 `reverse` modu `asplit` kopyasından `atrim` dilimleri alıp `areverse` uygular; bellek dosya uzunluğuyla değil maskelenen konuşmayla orantılıdır.
 
+Çıktı ya tamamdır ya hiç yoktur: FFmpeg hedefin yanındaki gizli bir ara dosyaya (`.<ad>.<pid>-<token>.part<uzantı>`) yazar, biten dosya tek bir `os.replace` adımıyla istenen yola taşınır. Bu yüzden FFmpeg'in bulunmaması, zaman aşımı ya da başarısız bir kodlama hedefe dokunmaz; önceki bir çalıştırmadan kalan çıktı `-y` ile kırpılıp sonra silinmez.
+
 ## Performans
 
 `python3 scripts/benchmark.py` kendi sentetik girdilerini üretir, gerçek CLI'yi
@@ -222,6 +256,7 @@ büyür.
 * **Platform kuralları için garanti yok.** Küfürü maskelemek YouTube'da veya başka bir platformda reklam onayı garantilemez; kurallar değişir ve hem insanlar hem sınıflandırıcılar uygular. Bu araç yalnızca sesi düzenler.
 * Video **her zaman** kopyalanır. Hedef konteyner kaynak kodeği taşıyamıyorsa (örneğin H.264'ü `.webm` içine) FFmpeg reddeder; uyumlu bir konteyner seç veya önce remux yap.
 * Çok kanallı sesin her kanalı aynı zarfla kısılır. Diyalog/müzik ayrımı (stem) henüz yok.
+* **Komut satırı iletileri İngilizcedir.** Yardım metinleri, `info:`/`ok:` satırları ve hata mesajları İngilizce yazılır; Türkçe belge bu README'dir. Böylece iletiler hata raporlarında ve aramada tek biçimde bulunur.
 
 ## Geliştirme
 

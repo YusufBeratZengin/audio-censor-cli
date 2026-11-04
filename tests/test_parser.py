@@ -29,6 +29,8 @@ from audio_censor.text import (
     normalize_token,
 )
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
 SRT_SAMPLE = """1
 00:00:01,000 --> 00:00:04,000
 Hello there friend
@@ -392,3 +394,13 @@ def test_cue_and_word_are_frozen() -> None:
         word.start = 2.0  # type: ignore[misc]
     cue = Cue(index=1, start=0.0, end=1.0, text="a", words=(word,))
     assert cue.words[0].duration == pytest.approx(1.0)
+
+
+def test_shipped_whisper_example_keeps_exact_word_times() -> None:
+    """The example the READMEs point at must stay a real, loadable transcript."""
+    transcript = load_transcript(REPO_ROOT / "examples" / "whisper-demo.json")
+    assert transcript.format == "whisper"
+    assert len(transcript.cues) == 4
+    times = {word.text: (word.start, word.end) for word in transcript.words}
+    assert times["shit"] == (pytest.approx(9.62), pytest.approx(10.02))
+    assert times["fucking"] == (pytest.approx(15.32), pytest.approx(16.2))
