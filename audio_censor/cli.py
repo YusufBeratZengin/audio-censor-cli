@@ -12,7 +12,7 @@ from typing import TextIO
 
 from . import __version__
 from .audit import write_audit
-from .engine import Engine, MediaInfo, format_argv
+from .engine import CommandResult, Engine, MediaInfo, format_argv
 from .errors import AudioCensorError, ConfigError
 from .filter_builder import AudioParams, build_filter_graph
 from .matcher import BadWordMatcher, Interval, Match, build_intervals, resolve_words
@@ -68,7 +68,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--subtitles",
         required=True,
         type=Path,
-        help="timestamped transcript (.srt, .vtt or Whisper .json)",
+        help=(
+            "timestamped transcript (.srt, .vtt or Whisper .json); SRT/VTT word "
+            "times are estimated from the cue duration, Whisper JSON word times are exact"
+        ),
     )
     parser.add_argument(
         "-w",
@@ -331,6 +334,46 @@ def _write_reports(
         reporter.info(f"censored subtitles: {options.clean_subtitles}")
 
 
+def _discard_partial_output(path: Path) -> None:
+    """Remove a half written media file left behind by a failed FFmpeg run."""
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
+    except OSError as exc:  # pragma: no cover - the directory vanished under us
+        print(f"warn: could not remove partial output {path}: {exc}", file=sys.stderr)
+
+
+def _render(
+    engine: Engine,
+    options: CliOptions,
+    *,
+    graph: str | None,
+    media: MediaInfo,
+) -> CommandResult:
+    """Run FFmpeg and drop the output file if the run fails.
+
+    A failed FFmpeg invocation often leaves a truncated container behind, which
+    looks like a finished render to anything that only checks ``exists()``.
+    """
+    options.output.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        if graph is None:
+            return engine.remux(input_path=options.input, output_path=options.output)
+        return engine.run(
+            input_path=options.input,
+            output_path=options.output,
+            media=media,
+            graph=graph,
+            audio_codec=options.audio_codec,
+            audio_bitrate=options.audio_bitrate,
+            keep_script=options.keep_script,
+        )
+    except AudioCensorError:
+        _discard_partial_output(options.output)
+        raise
+
+
 def _report_planned_outputs(options: CliOptions, reporter: _Reporter) -> None:
     """Describe the files a real run would write, without creating them."""
     if options.audit is not None:
@@ -407,8 +450,9 @@ def execute(options: CliOptions, stdout: TextIO | None = None, stderr: TextIO | 
                 )
             return 0
         command = engine.build_copy_argv(input_path=options.input, output_path=options.output)
-        options.output.parent.mkdir(parents=True, exist_ok=True)
-        engine.remux(input_path=options.input, output_path=options.output)
+        _render(engine, options, graph=None, media=media)
+        # Reports describe a finished render, so they are written only after
+        # FFmpeg has produced the output file.
         _write_reports(
             options,
             transcript=transcript,
@@ -496,6 +540,9 @@ def execute(options: CliOptions, stdout: TextIO | None = None, stderr: TextIO | 
             _report_planned_outputs(options, reporter)
         return 0
 
+    result = _render(engine, options, graph=graph, media=media)
+    # Only a successful render earns an audit log and censored subtitles: a
+    # failed FFmpeg run must not leave a report for audio that was never made.
     _write_reports(
         options,
         transcript=transcript,
@@ -503,17 +550,6 @@ def execute(options: CliOptions, stdout: TextIO | None = None, stderr: TextIO | 
         intervals=intervals,
         duration=media.duration,
         reporter=reporter,
-    )
-
-    options.output.parent.mkdir(parents=True, exist_ok=True)
-    result = engine.run(
-        input_path=options.input,
-        output_path=options.output,
-        media=media,
-        graph=graph,
-        audio_codec=options.audio_codec,
-        audio_bitrate=options.audio_bitrate,
-        keep_script=options.keep_script,
     )
     elapsed = time.monotonic() - started
     verb = {

@@ -13,18 +13,23 @@ python3 -m pip install -e ".[dev]"
 bash scripts/check.sh
 ```
 
-`scripts/check.sh` is the same gate CI runs: Ruff (lint + format), MyPy in
-strict mode, pytest with a coverage floor of 85 %. A pull request is ready when
-that script exits 0. It locates the tools through the active interpreter,
-`PATH`, `~/.local/bin` and a local `.venv`, installing whichever dev tool is
-still missing, so it is safe to run in a fresh checkout; export
-`CHECK_NO_INSTALL=1` to disable that and get a fail-fast error instead. Tests
-import the package straight from the checkout (`pythonpath = ["."]`), so they
-work without `pip install -e .`, even when pytest runs from another interpreter.
+`scripts/check.sh` is the same gate CI runs on Linux and Windows: Ruff (lint +
+format), MyPy in strict mode, pytest with a coverage floor of 85 %. A pull
+request is ready when that script exits 0. It locates the tools through the
+active interpreter, `PATH`, `~/.local/bin` and a local `.venv`, installing
+whichever dev tool is still missing, so it is safe to run in a fresh checkout;
+export `CHECK_NO_INSTALL=1` to disable that and get a fail-fast error instead.
+Tests import the package straight from the checkout (`pythonpath = ["."]`), so
+they work without `pip install -e .`, even when pytest runs from another
+interpreter. The dev tool versions CI uses are pinned in
+`requirements-dev.txt` (`python -m pip install -r requirements-dev.txt`).
 
-FFmpeg and FFprobe must be installed for the integration tests. Without them the
-suite still runs and skips the render tests, but coverage will drop below the
-gate — install FFmpeg before running the script.
+FFmpeg and FFprobe are required: the render tests are the ones that measure the
+beep, the fades and the copied video stream, and they are about 20 % of the
+suite, so the script stops with an explicit message when the binaries are
+missing rather than skipping them into a coverage failure. If FFmpeg is
+installed outside `PATH`, set `FFMPEG=/path/to/ffmpeg` and
+`FFPROBE=/path/to/ffprobe`; the script prepends their directory.
 
 ## What to work on
 

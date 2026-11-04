@@ -1,0 +1,14 @@
+# Pinned dev tool versions: one lock for CI and for `scripts/check.sh`.
+#
+#   python -m pip install -r requirements-dev.txt
+#   python -m pip install -e .
+#
+# pyproject.toml keeps loose lower bounds in the `dev` extra so contributors
+# are not blocked by a pin that is too old for their Python; CI and the gate
+# use this file so a green run means the same tool versions everywhere.
+# Dependabot watches this file (pip ecosystem) and raises the pins.
+coverage==7.17.0
+mypy==2.4.1
+pytest==9.2.0
+pytest-cov==7.1.0
+ruff==0.17.3

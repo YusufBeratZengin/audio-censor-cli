@@ -11,6 +11,8 @@
 #     interpreter (or the user site when the interpreter is read-only).
 #     Set CHECK_NO_INSTALL=1 to disable that and fail fast instead.
 #   * RUFF, MYPY and PYTEST may point at explicit executables.
+#   * FFmpeg and FFprobe must be available (PATH or $FFMPEG/$FFPROBE); the
+#     render tests need them and the coverage gate depends on those tests.
 #
 # Tests never touch the network; only the one-time tool bootstrap above can.
 
@@ -30,6 +32,40 @@ fi
 
 if [ -z "$PYTHON" ] || ! command -v "$PYTHON" >/dev/null 2>&1; then
   echo "error: python3 not found (set PYTHON to an interpreter)" >&2
+  exit 1
+fi
+
+# FFmpeg is not optional: without it ~50 render tests are skipped and the
+# coverage gate cannot pass. FFMPEG/FFPROBE may point at binaries that are not
+# on PATH; their directory is prepended so the test suite's shutil.which()
+# sees them too.
+for tool_var in FFMPEG FFPROBE; do
+  tool_path="${!tool_var:-}"
+  if [ -n "$tool_path" ]; then
+    if [ ! -x "$tool_path" ]; then
+      echo "error: $tool_var=$tool_path is not an executable file" >&2
+      exit 1
+    fi
+    # Keep the shell-native form (/c/... under Git Bash): a bare "C:\\..."
+    # entry would be split at its colon by PATH.  MSYS translates PATH when it
+    # launches a native Windows Python, so the tests find the binaries too.
+    PATH="$(cd "$(dirname "$tool_path")" && pwd):$PATH"
+  fi
+done
+export PATH
+
+for tool_name in ffmpeg ffprobe; do
+  if ! command -v "$tool_name" >/dev/null 2>&1; then
+    echo "error: $tool_name was not found on PATH" >&2
+    echo "       install FFmpeg (https://ffmpeg.org/download.html) and retry," >&2
+    echo "       or set FFMPEG=/path/to/ffmpeg and FFPROBE=/path/to/ffprobe." >&2
+    echo "       The suite skips every render test without it, so the coverage" >&2
+    echo "       gate cannot pass." >&2
+    exit 1
+  fi
+done
+if ! ffmpeg -version >/dev/null 2>&1; then
+  echo "error: ffmpeg is on PATH but does not run" >&2
   exit 1
 fi
 
@@ -135,11 +171,15 @@ fi
 # bound to a different interpreter: such a launcher does not put the CWD on
 # sys.path, so `import audio_censor` and subprocess `-m audio_censor` calls
 # would fail without an editable install.
-PYTHONPATH="$PWD${PYTHONPATH:+:$PYTHONPATH}" \
-  "${TOOL[@]}" tests/ --cov=audio_censor --cov-report=term-missing --cov-fail-under=85
-
-if ! command -v ffmpeg >/dev/null 2>&1; then
-  echo "note: ffmpeg is not installed, integration tests were skipped" >&2
+#
+# Native Windows Python needs a drive-letter path here; an inherited MSYS style
+# PYTHONPATH (colon separated, /c/...) is not usable, so it is replaced rather
+# than appended to.
+PROJECT_ROOT="$PWD"
+if command -v cygpath >/dev/null 2>&1; then
+  PROJECT_ROOT="$(cygpath -w "$PWD")"
 fi
+PYTHONPATH="$PROJECT_ROOT" \
+  "${TOOL[@]}" tests/ --cov=audio_censor --cov-report=term-missing --cov-fail-under=85
 
 echo "==> all checks passed"

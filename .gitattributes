@@ -1,0 +1,7 @@
+# Shell scripts are run by bash on Linux, macOS and the Windows runner; keep
+# them LF so a CRLF checkout cannot break `#!/usr/bin/env bash`.
+*.sh text eol=lf
+
+# Markdown and code are normalised by git; the working tree keeps the native
+# line ending of the platform.
+* text=auto

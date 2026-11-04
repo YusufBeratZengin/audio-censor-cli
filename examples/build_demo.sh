@@ -17,7 +17,14 @@ if [ -n "${AUDIO_CENSOR:-}" ]; then
 elif command -v audio-censor >/dev/null 2>&1; then
   COMMAND=(audio-censor)
 else
-  export PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}"
+  # Native Windows Python needs a drive-letter path and ';' separators; under
+  # Git Bash REPO_ROOT is /c/Users/... and the inherited PYTHONPATH is a
+  # colon-separated MSYS value that Windows Python cannot parse.
+  if command -v cygpath >/dev/null 2>&1; then
+    export PYTHONPATH="$(cygpath -w "$REPO_ROOT")"
+  else
+    export PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}"
+  fi
   COMMAND=(python3 -m audio_censor)
 fi
 

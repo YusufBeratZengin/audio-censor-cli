@@ -419,6 +419,43 @@ class TestReports:
         assert "[BLEEP]" not in text
         assert "shit happens here" in text
 
+    @requires_ffmpeg
+    def test_failed_render_leaves_no_reports_or_partial_output(
+        self,
+        audio_file: Path,
+        srt_file: Path,
+        words_file: Path,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """A broken encoder must not leave an audit log for audio that was never made."""
+        output = tmp_path / "broken.wav"
+        audit = tmp_path / "broken.csv"
+        clean = tmp_path / "broken.srt"
+        assert (
+            run_cli(
+                audio_file,
+                "-s",
+                srt_file,
+                "-w",
+                words_file,
+                "-o",
+                output,
+                "--audit",
+                audit,
+                "--clean-subtitles",
+                clean,
+                # FFmpeg fails at graph build time, after the probe succeeded.
+                "--audio-codec",
+                "no-such-encoder",
+            )
+            == 1
+        )
+        assert "FFmpeg failed" in capsys.readouterr().err
+        assert not audit.exists(), "audit log written for a failed render"
+        assert not clean.exists(), "censored subtitles written for a failed render"
+        assert not output.exists(), "truncated output left behind"
+
     def test_keep_filter_script(
         self, audio_file: Path, srt_file: Path, words_file: Path, tmp_path: Path
     ) -> None:

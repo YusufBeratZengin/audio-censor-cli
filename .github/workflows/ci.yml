@@ -9,7 +9,59 @@ on:
 permissions:
   contents: read
 
+env:
+  # One pin file for every job: a green run means the same tool versions.
+  PIP_CONSTRAINT: requirements-dev.txt
+
 jobs:
+  # The project gate itself, on both supported operating systems.  This is the
+  # job that mirrors `bash scripts/check.sh` for a contributor: Ruff (lint +
+  # format), MyPy strict, pytest with the 85 % coverage floor.
+  gate:
+    name: gate / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install FFmpeg (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+
+      - name: Install FFmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg -y --no-progress
+
+      - name: Install dev tools and the package
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+          python -m pip install -e .
+
+      - name: Show tool versions
+        shell: bash
+        run: |
+          python --version
+          python -m ruff --version
+          python -m mypy --version
+          ffmpeg -version | head -1
+
+      - name: Run the project gate
+        shell: bash
+        run: bash scripts/check.sh
+
+  # Supported Python versions, so a syntax or typing regression on the oldest
+  # interpreter shows up before release.
   test:
     name: ${{ matrix.os }} / Python ${{ matrix.python }}
     runs-on: ${{ matrix.os }}
@@ -36,24 +88,11 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install ffmpeg -y --no-progress
 
-      - name: Install the package
+      - name: Install dev tools and the package
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
-
-      - name: Show tool versions
-        run: |
-          python --version
-          ffmpeg -version
-
-      - name: Lint
-        run: python -m ruff check .
-
-      - name: Format check
-        run: python -m ruff format --check .
-
-      - name: Type check
-        run: python -m mypy
+          python -m pip install -r requirements-dev.txt
+          python -m pip install -e .
 
       - name: Tests with coverage
         run: python -m pytest tests/ --cov=audio_censor --cov-report=term-missing --cov-fail-under=85
@@ -62,15 +101,3 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: bash examples/build_demo.sh demo-out
-
-  gate:
-    name: scripts/check.sh
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
-      - run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]"
-      - run: bash scripts/check.sh

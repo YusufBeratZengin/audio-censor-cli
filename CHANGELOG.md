@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The audit CSV and the censored subtitles are written only after FFmpeg has
+  produced the output file. A failed render no longer leaves a report for audio
+  that was never made, and the truncated container FFmpeg leaves behind is
+  removed instead of looking like a finished output.
+- `scripts/check.sh` stops with an explicit error when FFmpeg or FFprobe is
+  missing instead of running 50+ skipped render tests into a confusing coverage
+  failure. `FFMPEG`/`FFPROBE` may point at binaries outside `PATH`.
+- The README and README.tr no longer claim a 20 minute 1080p file renders "in
+  seconds"; both quote measured runs (20 min of 48 kHz stereo in 38 s, 60 s of
+  1080p in 2.95 s) with the machine and tool versions.
+
 - All output paths (`--output`, `--audit`, `--clean-subtitles`,
   `--keep-filter-script`) are validated against the input, the transcript and
   each other before anything is written, so a collision can no longer overwrite
@@ -30,6 +41,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Prober tests mock `subprocess.run` instead of executing `#!/bin/sh` scripts,
   so they also run on Windows; the FFmpeg availability guard now performs a
   real check.
+
+### Changed
+
+- CI runs the `scripts/check.sh` gate on Linux **and** Windows, pins the dev
+  tools in `requirements-dev.txt`, and keeps the 3.10/3.13 test matrix.
+- `-s/--subtitles` help states that SRT/VTT word times are estimated from cue
+  duration while Whisper JSON word times are exact.
 
 ## [0.1.0] - 2026-11-03
 
