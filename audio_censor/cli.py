@@ -12,13 +12,14 @@ from pathlib import Path
 from typing import TextIO
 
 from . import __version__
-from .audit import write_audit
+from .audit import render_audit_csv
 from .engine import CommandResult, Engine, MediaInfo, format_argv, same_file
-from .errors import AudioCensorError, ConfigError
+from .errors import AudioCensorError, ConfigError, ReportError
 from .filter_builder import AudioParams, build_filter_graph
 from .matcher import BadWordMatcher, Interval, Match, build_intervals, resolve_words
 from .parser import Transcript, load_transcript, shift_transcript
-from .subtitles import DEFAULT_MASK, write_clean_srt
+from .reports import Report, ReportBatch
+from .subtitles import DEFAULT_MASK, render_clean_srt
 from .text import format_timecode
 
 PROGRAM = "audio-censor"
@@ -351,29 +352,77 @@ def _summary(
     }
 
 
-def _write_reports(
+def _prepare_reports(
     options: CliOptions,
     *,
     transcript: Transcript,
     matches: list[Match],
     intervals: list[Interval],
     duration: float,
-    reporter: _Reporter,
-) -> None:
-    """Write the optional audit log and censored subtitles."""
+) -> ReportBatch:
+    """Render the optional reports in memory; nothing is written yet."""
+    reports: list[Report] = []
     if options.audit is not None:
-        write_audit(
-            options.audit,
-            matches,
-            intervals,
-            mode=options.mode,
-            pad=options.pad_ms / 1000.0,
-            duration=duration,
+        reports.append(
+            Report(
+                options.audit,
+                render_audit_csv(
+                    matches,
+                    intervals,
+                    mode=options.mode,
+                    pad=options.pad_ms / 1000.0,
+                    duration=duration,
+                ),
+            )
         )
+    if options.clean_subtitles is not None:
+        reports.append(
+            Report(
+                options.clean_subtitles,
+                render_clean_srt(transcript, matches, mask=options.mask),
+            )
+        )
+    return ReportBatch(reports)
+
+
+def _publish_reports(batch: ReportBatch, *, options: CliOptions, reporter: _Reporter) -> None:
+    """Swap the staged reports into place and name them in the log."""
+    try:
+        batch.publish()
+    except ReportError as exc:
+        raise ReportError(
+            f"{exc}; the audio output {options.output} was written, its reports were not updated"
+        ) from exc
+    if options.audit is not None:
         reporter.info(f"audit log: {options.audit}")
     if options.clean_subtitles is not None:
-        write_clean_srt(options.clean_subtitles, transcript, matches, mask=options.mask)
         reporter.info(f"censored subtitles: {options.clean_subtitles}")
+
+
+def _render_and_report(
+    engine: Engine,
+    options: CliOptions,
+    *,
+    graph: str | None,
+    media: MediaInfo,
+    batch: ReportBatch,
+    reporter: _Reporter,
+) -> CommandResult:
+    """Render first, then publish the audit log and censored subtitles.
+
+    The reports are staged before FFmpeg starts, so an unwritable report path
+    fails before any audio is encoded. A failed render discards the staged
+    copies, and a failed swap restores the report files that were already
+    there -- a report is never half written or left over from a failed batch.
+    """
+    batch.stage()
+    try:
+        result = _render(engine, options, graph=graph, media=media)
+    except BaseException:
+        batch.discard()
+        raise
+    _publish_reports(batch, options=options, reporter=reporter)
+    return result
 
 
 def _render(
@@ -484,16 +533,20 @@ def execute(options: CliOptions, stdout: TextIO | None = None, stderr: TextIO | 
                     file=out,
                 )
             return 0
-        command = engine.build_copy_argv(input_path=options.input, output_path=options.output)
-        _render(engine, options, graph=None, media=media)
-        # Reports describe a finished render, so they are written only after
+        # Reports describe a finished render, so they are published only after
         # FFmpeg has produced the output file.
-        _write_reports(
+        result = _render_and_report(
+            engine,
             options,
-            transcript=transcript,
-            matches=matches,
-            intervals=[],
-            duration=media.duration,
+            graph=None,
+            media=media,
+            batch=_prepare_reports(
+                options,
+                transcript=transcript,
+                matches=matches,
+                intervals=[],
+                duration=media.duration,
+            ),
             reporter=reporter,
         )
         elapsed = time.monotonic() - started
@@ -508,7 +561,7 @@ def execute(options: CliOptions, stdout: TextIO | None = None, stderr: TextIO | 
                         intervals=[],
                         output=options.output,
                         elapsed=elapsed,
-                        command=command,
+                        command=result.argv,
                     ),
                     indent=2,
                 ),
@@ -575,15 +628,20 @@ def execute(options: CliOptions, stdout: TextIO | None = None, stderr: TextIO | 
             _report_planned_outputs(options, reporter)
         return 0
 
-    result = _render(engine, options, graph=graph, media=media)
     # Only a successful render earns an audit log and censored subtitles: a
     # failed FFmpeg run must not leave a report for audio that was never made.
-    _write_reports(
+    result = _render_and_report(
+        engine,
         options,
-        transcript=transcript,
-        matches=matches,
-        intervals=intervals,
-        duration=media.duration,
+        graph=graph,
+        media=media,
+        batch=_prepare_reports(
+            options,
+            transcript=transcript,
+            matches=matches,
+            intervals=intervals,
+            duration=media.duration,
+        ),
         reporter=reporter,
     )
     elapsed = time.monotonic() - started

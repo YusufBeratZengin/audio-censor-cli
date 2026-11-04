@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import io
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
@@ -70,6 +71,31 @@ def audit_rows(
     return rows
 
 
+def render_audit_csv(
+    matches: Iterable[Match],
+    intervals: Sequence[Interval],
+    *,
+    mode: str,
+    offset: float = 0.0,
+    pad: float = 0.0,
+    duration: float | None = None,
+) -> str:
+    """Render the audit CSV as text so the CLI can publish it atomically."""
+    rows = audit_rows(
+        list(matches),
+        intervals,
+        mode=mode,
+        offset=offset,
+        pad=pad,
+        duration=duration,
+    )
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=FIELDNAMES)
+    writer.writeheader()
+    writer.writerows(rows)
+    return buffer.getvalue()
+
+
 def write_audit(
     path: str | Path,
     matches: Iterable[Match],
@@ -80,19 +106,24 @@ def write_audit(
     pad: float = 0.0,
     duration: float | None = None,
 ) -> Path:
-    """Write the audit CSV and return its path."""
+    """Write the audit CSV directly and return its path.
+
+    The CLI uses :func:`render_audit_csv` and publishes the file through
+    :class:`audio_censor.reports.ReportBatch`; this helper remains for library
+    callers that only need the CSV.
+    """
     target = Path(path)
-    rows = audit_rows(
-        list(matches),
-        intervals,
-        mode=mode,
-        offset=offset,
-        pad=pad,
-        duration=duration,
-    )
     target.parent.mkdir(parents=True, exist_ok=True)
-    with target.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=FIELDNAMES)
-        writer.writeheader()
-        writer.writerows(rows)
+    target.write_text(
+        render_audit_csv(
+            matches,
+            intervals,
+            mode=mode,
+            offset=offset,
+            pad=pad,
+            duration=duration,
+        ),
+        encoding="utf-8",
+        newline="",
+    )
     return target

@@ -15,6 +15,10 @@ class ConfigError(AudioCensorError):
     """Raised for invalid user supplied options or word lists."""
 
 
+class ReportError(AudioCensorError):
+    """Raised when the optional audit log or censored subtitles cannot be written."""
+
+
 class FFmpegError(AudioCensorError):
     """Raised when FFmpeg/FFprobe is missing or fails."""
 

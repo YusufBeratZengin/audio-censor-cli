@@ -462,6 +462,7 @@ class TestReports:
         assert not audit.exists(), "audit log written for a failed render"
         assert not clean.exists(), "censored subtitles written for a failed render"
         assert not output.exists(), "truncated output left behind"
+        assert partial_files(tmp_path) == [], "staged report files were left behind"
 
     def test_failed_render_keeps_the_previous_output(
         self,
@@ -530,6 +531,73 @@ class TestReports:
         assert run_cli(audio_file, "-s", srt_file, "-w", words_file, "-o", output) == 0
         assert output.read_bytes() != b"previous render"
         assert output.stat().st_size > 1000
+        assert partial_files(tmp_path) == []
+
+    def test_unwritable_report_path_fails_before_the_render(
+        self,
+        audio_file: Path,
+        srt_file: Path,
+        words_file: Path,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """A report that cannot even be staged must not cost a full render."""
+        blocker = tmp_path / "blocked"
+        blocker.write_text("a file, not a directory", encoding="utf-8")
+        output = tmp_path / "clean.wav"
+        assert (
+            run_cli(
+                audio_file,
+                "-s",
+                srt_file,
+                "-w",
+                words_file,
+                "-o",
+                output,
+                "--audit",
+                blocker / "audit.csv",
+            )
+            == 1
+        )
+        assert "could not stage the report" in capsys.readouterr().err
+        assert not output.exists(), "audio was rendered although its report could not be staged"
+
+    def test_report_failure_keeps_the_previous_reports(
+        self,
+        audio_file: Path,
+        srt_file: Path,
+        words_file: Path,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """A directory at one report path must not half-publish the others."""
+        output = tmp_path / "clean.wav"
+        audit = tmp_path / "audit.csv"
+        audit.write_text("previous audit", encoding="utf-8")
+        clean = tmp_path / "clean.srt"
+        clean.mkdir()
+        (clean / "keep.txt").write_text("keep", encoding="utf-8")
+        assert (
+            run_cli(
+                audio_file,
+                "-s",
+                srt_file,
+                "-w",
+                words_file,
+                "-o",
+                output,
+                "--audit",
+                audit,
+                "--clean-subtitles",
+                clean,
+            )
+            == 1
+        )
+        err = capsys.readouterr().err
+        assert "not a regular file" in err
+        assert "reports were not updated" in err
+        assert audit.read_text(encoding="utf-8") == "previous audit"
+        assert (clean / "keep.txt").read_text(encoding="utf-8") == "keep"
         assert partial_files(tmp_path) == []
 
     def test_keep_filter_script(
