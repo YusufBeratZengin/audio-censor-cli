@@ -22,7 +22,7 @@ export `CHECK_NO_INSTALL=1` to disable that and get a fail-fast error instead.
 Tests import the package straight from the checkout (`pythonpath = ["."]`), so
 they work without `pip install -e .`, even when pytest runs from another
 interpreter. The dev tool versions CI uses are pinned in
-`requirements-dev.txt` (`python -m pip install -r requirements-dev.txt`).
+`requirements-dev.txt` (`python -m pip install -r requirements-dev.txt`). `scripts/check.sh` reads those same pins when it has to install a missing tool, so the local gate never silently runs a newer Ruff or MyPy than CI.
 
 FFmpeg and FFprobe are required: the render tests are the ones that measure the
 beep, the fades and the copied video stream, and they are about 20 % of the

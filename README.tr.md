@@ -45,6 +45,22 @@ EOF
 audio-censor podcast.mp4 --subtitles podcast.vtt --words badwords.txt --mode bleep -o clean.mp4
 ```
 
+Aynı iki adım PowerShell'de (Windows) — `cat` ve heredoc yok. Tek tırnaklı
+here-string `\w` ifadesini olduğu gibi korur, düzenli ifade dosyaya bozulmadan
+yazılır:
+
+```powershell
+@'
+shit
+re:fuck\w*
+'@ | Set-Content -Encoding utf8 badwords.txt
+
+audio-censor podcast.mp4 --subtitles podcast.vtt --words badwords.txt --mode bleep -o clean.mp4
+```
+
+`pip install audio-censor-cli` PowerShell'de de aynı komuttur; FFmpeg için
+yukarıdaki tablodaki `winget install Gyan.FFmpeg` yeterlidir.
+
 Aşağıdaki çıktı, `bash examples/build_demo.sh` ile üretilen 20 saniyelik sentetik klipten alınmıştır:
 
 ```console
@@ -125,6 +141,14 @@ SRT ve VTT yalnızca replik düzeyinde zaman taşır; bu yüzden kelime aralıkl
 ```
 
 Çıkış kodları: `0` başarılı (eşleşme yoksa dosya olduğu gibi yeniden paketlenir), `1` çalışma hatası, `2` hatalı komut satırı.
+
+Sayısal seçeneklerin hepsi sonlu bir sayı olmalıdır. `nan`, `inf` ve `-inf`
+Python'da geçerli float'tır ama kendilerini kullanan denetimleri sessizce
+etkisiz bırakır: `--max-gap-ms nan` yüzünden çok kelimeli bir ifade aradaki
+duraklamaya bakılmaksızın eşleşir, `--fade-ms inf` ise FFmpeg'in çizemeyeceği
+bir grafik üretir. CLI bu değerleri seçeneğin adını söyleyen bir mesajla ve
+çıkış kodu `2` ile reddeder; eşleştirici, aralık kurucu ve filtre kurucu da
+kütüphane çağrıları için aynı kuralı uygular.
 
 `--dry-run` hiçbir şey yazmaz: çıktı dosyası, denetim CSV'si, sansürlü altyazı ve saklanan filtre grafiği oluşmaz. `--json` ile tam olarak tek bir JSON belgesi basar (grafik `filter_graph` alanındadır), yani `... --dry-run --json | jq` çalışır.
 
@@ -211,7 +235,7 @@ FFmpeg ve FFprobe zorunlu: kapı, render testleri atlanıp kapsam eşiği
 düşmesin diye açık bir hata verip durur. İkili dosyalar `PATH`'te değilse
 `FFMPEG=/yol/ffmpeg` ve `FFPROBE=/yol/ffprobe` ile göster; `scripts/check.sh`
 bulundukları dizini `PATH`'in başına ekler. Geliştirme aracı sürümleri
-`requirements-dev.txt` içinde sabitlenmiştir ve CI bu dosyayı kurar.
+`requirements-dev.txt` içinde sabitlenmiştir ve CI bu dosyayı kurar. Yerel kapı da aynı sabitleri okur: `scripts/check.sh` eksik bir aracı kurarken en yenisini değil, sabitlenmiş sürümü (`ruff==0.17.3` gibi) kurar; böylece yeşil bir yerel çalıştırma ile yeşil CI aynı Ruff, MyPy ve pytest sürümlerini kullanır.
 
 Testler `audio_censor` paketini doğrudan kopyadan içe aktarır (`pyproject.toml`
 içinde `pythonpath = ["."]`), yani düzenlenebilir kurulum yapılmadan da

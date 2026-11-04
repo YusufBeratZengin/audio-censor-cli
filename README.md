@@ -55,6 +55,24 @@ EOF
 audio-censor podcast.mp4 --subtitles podcast.vtt --words badwords.txt --mode bleep -o clean.mp4
 ```
 
+The same two steps in PowerShell (Windows), where `cat`/heredocs are not
+available. The single-quoted here-string keeps `\w` literal, so the regular
+expression reaches the file unchanged:
+
+```powershell
+# 1. the word list
+@'
+shit
+re:fuck\w*
+'@ | Set-Content -Encoding utf8 badwords.txt
+
+# 2. censor (identical arguments; quote paths that contain spaces)
+audio-censor podcast.mp4 --subtitles podcast.vtt --words badwords.txt --mode bleep -o clean.mp4
+```
+
+`pip install audio-censor-cli` is the same command in PowerShell, and
+`winget install Gyan.FFmpeg` opens the FFmpeg installer from the table above.
+
 Real output from a synthetic 20 s clip (`bash examples/build_demo.sh` reproduces it):
 
 ```console
@@ -170,6 +188,13 @@ output:
 
 Exit codes: `0` success (including "nothing matched", which remuxes the file
 untouched), `1` runtime error, `2` bad command line.
+
+Every numeric option must be a finite number. `nan`, `inf` and `-inf` parse as
+floats but would silently defeat the checks that use them — `--max-gap-ms nan`
+would let a multi-word phrase match across any pause, `--fade-ms inf` would
+produce a graph FFmpeg cannot ramp — so the CLI rejects them with exit code `2`
+and a message naming the option. The matcher, interval builder and filter
+builder enforce the same rule for library callers.
 
 `--dry-run` writes nothing at all: no output file, no audit CSV, no censored
 subtitles and no retained filter script. With `--json` it prints exactly one
@@ -294,7 +319,11 @@ FFmpeg and FFprobe are required — the gate stops with an explicit message
 instead of letting the render tests skip and the coverage floor fail. If the
 binaries are not on `PATH`, point at them with `FFMPEG=/path/to/ffmpeg` and
 `FFPROBE=/path/to/ffprobe`; `scripts/check.sh` prepends their directory.
-Dev tool versions are pinned in `requirements-dev.txt`, which CI installs.
+Dev tool versions are pinned in `requirements-dev.txt`, which CI installs. The
+local gate reads the same pins: when `scripts/check.sh` has to bootstrap a
+missing tool it installs the pinned version (`ruff==0.17.3` and so on) rather
+than the newest release, so a green local run and a green CI run use identical
+Ruff, MyPy and pytest versions. Update the pin file and the gate follows.
 
 The tests import `audio_censor` from the checkout itself (`pythonpath = ["."]`
 in `pyproject.toml`), so `python3 -m pytest` and `bash scripts/check.sh` work

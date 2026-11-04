@@ -7,8 +7,9 @@
 # The script is self-contained:
 #   * picks python3 (or $PYTHON) and finds the dev tools through the module
 #     namespace, PATH, the user's ~/.local/bin and a local .venv;
-#   * if a tool is still missing it installs just that tool into the current
-#     interpreter (or the user site when the interpreter is read-only).
+#   * if a tool is still missing it installs just that tool -- at the version
+#     pinned in requirements-dev.txt, the same file CI installs -- into the
+#     current interpreter (or the user site when the interpreter is read-only).
 #     Set CHECK_NO_INSTALL=1 to disable that and fail fast instead.
 #   * RUFF, MYPY and PYTEST may point at explicit executables.
 #   * FFmpeg and FFprobe must be available (PATH or $FFMPEG/$FFPROBE); the
@@ -73,6 +74,20 @@ has_module() {
   "$PYTHON" -c "import $1" >/dev/null 2>&1
 }
 
+# The one pin file CI installs.  When this script has to bootstrap a missing
+# tool it installs the *pinned* version from here, so a green local gate means
+# the same Ruff/MyPy/pytest as the CI job instead of whatever is newest today.
+REQUIREMENTS="requirements-dev.txt"
+
+# requirement_pin <pip package> -> exact version, or nothing when unpinned.
+requirement_pin() {
+  local package="$1" pin=""
+  if [ -f "$REQUIREMENTS" ]; then
+    pin="$(grep -E "^[[:space:]]*$package==" "$REQUIREMENTS" | head -n 1 | cut -d= -f3)"
+  fi
+  printf '%s' "$pin"
+}
+
 # resolve <module> [<pip package> ...]
 # Fills the TOOL array with the command that runs <module>.
 TOOL=()
@@ -111,9 +126,19 @@ resolve() {
   done
 
   if [ "${CHECK_NO_INSTALL:-0}" != "1" ] && [ "$#" -gt 0 ]; then
-    echo "note: $module not found, installing: $*" >&2
-    if "$PYTHON" -m pip install --quiet "$@" >/dev/null 2>&1 ||
-      "$PYTHON" -m pip install --quiet --user "$@" >/dev/null 2>&1; then
+    local package pin
+    local -a specs=()
+    for package in "$@"; do
+      pin="$(requirement_pin "$package")"
+      if [ -n "$pin" ]; then
+        specs+=("$package==$pin")
+      else
+        specs+=("$package")
+      fi
+    done
+    echo "note: $module not found, installing: ${specs[*]}" >&2
+    if "$PYTHON" -m pip install --quiet "${specs[@]}" >/dev/null 2>&1 ||
+      "$PYTHON" -m pip install --quiet --user "${specs[@]}" >/dev/null 2>&1; then
       if has_module "$module"; then
         TOOL=("$PYTHON" -m "$module")
         return 0
@@ -158,8 +183,13 @@ pytest_has_cov() {
 }
 if ! pytest_has_cov; then
   if [ "${CHECK_NO_INSTALL:-0}" != "1" ] && [ "${TOOL[0]}" = "$PYTHON" ]; then
-    echo "note: pytest-cov not found, installing it" >&2
-    "$PYTHON" -m pip install --quiet pytest-cov >/dev/null 2>&1 || true
+    cov_spec="pytest-cov"
+    cov_pin="$(requirement_pin pytest-cov)"
+    if [ -n "$cov_pin" ]; then
+      cov_spec="pytest-cov==$cov_pin"
+    fi
+    echo "note: pytest-cov not found, installing $cov_spec" >&2
+    "$PYTHON" -m pip install --quiet "$cov_spec" >/dev/null 2>&1 || true
   fi
   if ! pytest_has_cov; then
     echo "error: pytest-cov is not installed (needed for the coverage gate)" >&2
