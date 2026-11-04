@@ -16,6 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Numeric options reject `nan`, `inf` and `-inf`. `argparse`'s `float()` accepts
+  them, and they silently disabled every check built on comparisons:
+  `--max-gap-ms nan` made `gap > max_gap` false for every pair, so a multi-word
+  phrase matched across any pause, and `--fade-ms inf` produced a graph FFmpeg
+  cannot ramp. The CLI now exits `2` with a message naming the option, and
+  `BadWordMatcher`, `build_intervals` and `FilterBuilder` raise `ConfigError`
+  for library callers.
+- `--beep-freq` at or above the stream's Nyquist frequency is refused with a
+  clear error instead of rendering an aliased whistle at the wrong pitch.
 - Output paths are compared by file identity as well as by name. A hard link
   under a different name used to pass the collision check and FFmpeg's `-y`
   then truncated the source media (or the transcript). `Engine.run`/`remux`
@@ -60,6 +69,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `scripts/check.sh` bootstraps a missing dev tool at the version pinned in
+  `requirements-dev.txt` (the file CI installs) instead of the newest release,
+  so a green local gate and a green CI run use the same Ruff, MyPy and pytest.
+- The README and README.tr walkthroughs include a PowerShell version of the
+  word-list step for Windows users.
 - CI runs the `scripts/check.sh` gate on Linux **and** Windows, pins the dev
   tools in `requirements-dev.txt`, and keeps the 3.10/3.13 test matrix.
 - `-s/--subtitles` help states that SRT/VTT word times are estimated from cue
