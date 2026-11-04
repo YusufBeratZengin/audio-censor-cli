@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 
@@ -197,6 +198,29 @@ class TestWhisperJson:
         cues = parse_whisper_json(json.dumps(payload))
         assert cues[0].start == pytest.approx(1.5)
         assert cues[0].end == pytest.approx(2.5)
+
+    def test_non_finite_word_times_never_reach_the_matcher(self) -> None:
+        # json.loads accepts NaN/Infinity and a huge literal becomes inf; none of
+        # those is a usable timestamp, and a NaN would poison every comparison.
+        raw = (
+            '{"segments": [{"start": 0.0, "end": 5.0, "text": "hello there",'
+            ' "words": [{"word": "hello", "start": NaN, "end": Infinity},'
+            ' {"word": "there", "start": "nan", "end": 1e400}]}]}'
+        )
+        cues = parse_whisper_json(raw)
+        words = cues[0].words
+        assert [word.text for word in words] == ["hello", "there"]
+        assert all(math.isfinite(word.start) and math.isfinite(word.end) for word in words)
+        assert words[-1].end == pytest.approx(5.0)
+
+    def test_non_finite_segment_time_is_an_error(self) -> None:
+        with pytest.raises(TranscriptError, match="no usable timestamps"):
+            parse_whisper_json('{"segments": [{"start": NaN, "end": Infinity, "text": "hi"}]}')
+
+    def test_negative_times_are_not_accepted(self) -> None:
+        # A negative cue start would produce a mask before the file begins.
+        with pytest.raises(TranscriptError, match="no usable timestamps"):
+            parse_whisper_json('{"segments": [{"start": -1.0, "end": 2.0, "text": "hi"}]}')
 
     def test_invalid_json(self) -> None:
         with pytest.raises(TranscriptError, match="invalid JSON"):

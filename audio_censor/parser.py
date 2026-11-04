@@ -11,6 +11,7 @@ The public entry point is :func:`load_transcript`.
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -190,21 +191,31 @@ def parse_vtt(text: str) -> tuple[Cue, ...]:
 
 
 def _number(value: Any, default: float | None = None) -> float | None:
+    """Read one timestamp, rejecting anything that is not a usable time.
+
+    ``json.loads`` accepts ``NaN``/``Infinity`` and a literal such as ``1e400``
+    becomes ``inf``; a NaN would silently poison every comparison downstream,
+    and a negative start would mask audio before the file begins.  All of those
+    are treated as missing so the caller can fall back or report the segment.
+    """
     if isinstance(value, bool):
         return default
+    number: float | None
     if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
+        number = float(value)
+    elif isinstance(value, str):
         text = value.strip()
         if not text:
             return default
         try:
-            if ":" in text:
-                return parse_timestamp(text)
-            return float(text)
+            number = parse_timestamp(text) if ":" in text else float(text)
         except (ValueError, TranscriptError):
             return default
-    return default
+    else:
+        return default
+    if not math.isfinite(number) or number < 0:
+        return default
+    return number
 
 
 def _segment_bounds(segment: dict[str, Any]) -> tuple[float | None, float | None]:
