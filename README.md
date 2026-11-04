@@ -166,8 +166,9 @@ audio-censor podcast.mp4 -s podcast.json -w badwords.txt -o clean.mp4
 ```
 
 `examples/whisper-demo.json` is a complete sample of that JSON shape (fake
-transcript, shipped with the repo). Run against the clip produced by
-`examples/build_demo.sh`, it reports the boundaries written in the file:
+transcript, shipped with the repo); `bash examples/build_demo.sh` runs the clip
+with it after the VTT demo, so the ranges below are one command away. It reports
+the boundaries written in the file:
 
 ```console
 $ audio-censor podcast.mp4 -s podcast.json -w badwords.txt -o clean.mp4
@@ -237,6 +238,14 @@ Every output path (`--output`, `--audit`, `--clean-subtitles`,
 `--keep-filter-script`) is checked before anything is written. It must differ
 from the input, from the transcript and from every other output, so a typo can
 never overwrite the source media or subtitles.
+
+The audit CSV and the censored subtitles are staged next to their target and
+swapped in together after the render succeeded. A report path that cannot be
+staged (a missing directory, a file where a directory belongs) fails the run
+before FFmpeg starts, and if a swap fails the reports that were already
+replaced are restored, so a run never leaves a new CSV next to a stale SRT. The
+audio output is published first; if only a report swap fails the error message
+says the audio was written and the reports were not updated.
 
 ## Word lists
 
@@ -356,7 +365,11 @@ python3 scripts/benchmark.py # regenerate the Performance table (--quick for a s
 FFmpeg and FFprobe are required — the gate stops with an explicit message
 instead of letting the render tests skip and the coverage floor fail. If the
 binaries are not on `PATH`, point at them with `FFMPEG=/path/to/ffmpeg` and
-`FFPROBE=/path/to/ffprobe`; `scripts/check.sh` prepends their directory.
+`FFPROBE=/path/to/ffprobe`; `scripts/check.sh` prepends their directory. When
+neither is on `PATH` the script also looks in the usual install locations
+(winget links, Chocolatey, Scoop, `/c/ffmpeg/bin`, Homebrew) before giving up,
+because a GUI installer often updates the machine `PATH` but not the shell that
+started the gate.
 Dev tool versions are pinned in `requirements-dev.txt`, which CI installs. The
 local gate reads the same pins: when `scripts/check.sh` has to bootstrap a
 missing tool it installs the pinned version (`ruff==0.17.3` and so on) rather
@@ -390,7 +403,8 @@ audio_censor/
 ├── filter_builder.py  # filter_complex graph
 ├── engine.py          # ffprobe/ffmpeg invocation, -c:v copy
 ├── audit.py           # CSV audit log
-└── subtitles.py       # censored SRT export
+├── subtitles.py       # censored SRT export
+└── reports.py         # atomic staging/publishing of the optional reports
 ```
 
 ## Contributing and project docs

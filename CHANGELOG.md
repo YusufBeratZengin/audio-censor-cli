@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The audit CSV and the censored subtitles are staged next to their target and
+  published as one set (`audio_censor/reports.py`). A report path that cannot be
+  written now fails before FFmpeg starts, and a failed swap restores the reports
+  that were already replaced, so a run never leaves a new CSV beside a stale SRT.
+  The error names the path and says the audio output was written.
+- `bash examples/build_demo.sh` also runs the demo clip with the word level
+  `examples/whisper-demo.json`, so the exact ranges quoted in both READMEs are
+  reproduced by one command instead of a second manual invocation.
 - `scripts/benchmark.py` regenerates the README Performance table: it builds
   synthetic WAV/H.264 inputs with FFmpeg, times the real CLI end to end and
   fails if the video stream MD5 changed. `--quick` is a ~30 s version used by
@@ -45,7 +53,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file stays byte-identical and only the staging file is removed.
 - `scripts/check.sh` stops with an explicit error when FFmpeg or FFprobe is
   missing instead of running 50+ skipped render tests into a confusing coverage
-  failure. `FFMPEG`/`FFPROBE` may point at binaries outside `PATH`.
+  failure. `FFMPEG`/`FFPROBE` may point at binaries outside `PATH`, and when
+  neither binary is on `PATH` the script now looks in the usual install
+  locations (winget links, Chocolatey, Scoop, `/c/ffmpeg/bin`, Homebrew) before
+  giving up -- GUI installers often update the machine `PATH` but not the shell
+  that started the gate.
 - The README and README.tr no longer claim a 20 minute 1080p file renders "in
   seconds"; both quote measured runs (20 min of 48 kHz stereo in 37.5 s, 60 s of
   1080p in 4.1 s) with the machine and tool versions, and name the script that

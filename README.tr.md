@@ -129,8 +129,9 @@ audio-censor podcast.mp4 -s podcast.json -w badwords.txt -o clean.mp4
 ```
 
 `examples/whisper-demo.json` bu JSON biçiminin tam bir örneğidir (sahte döküm,
-depoyla birlikte gelir). `examples/build_demo.sh` ile üretilen klipte
-çalıştırıldığında, dosyada yazılı olan sınırları bildirir:
+depoyla birlikte gelir). `bash examples/build_demo.sh` klibi önce VTT, sonra bu
+JSON ile çalıştırır; aşağıdaki aralıklar tek komutla görülebilir. Dosyada yazılı
+olan sınırlar bildirilir:
 
 ```console
 $ audio-censor podcast.mp4 -s podcast.json -w badwords.txt -o clean.mp4
@@ -185,6 +186,8 @@ kütüphane çağrıları için aynı kuralı uygular.
 `--dry-run` hiçbir şey yazmaz: çıktı dosyası, denetim CSV'si, sansürlü altyazı ve saklanan filtre grafiği oluşmaz. `--json` ile tam olarak tek bir JSON belgesi basar (grafik `filter_graph` alanındadır), yani `... --dry-run --json | jq` çalışır.
 
 Tüm çıktı yolları (`--output`, `--audit`, `--clean-subtitles`, `--keep-filter-script`) yazmadan önce denetlenir. Girdiden, dökümden ve birbirlerinden farklı olmalıdır; böylece bir yazım hatası kaynak medyayı veya altyazıyı ezemez.
+
+Denetim CSV'si ve sansürlü altyazı, hedeflerinin yanında hazırlanır ve render başarılı olduktan sonra birlikte yerlerine taşınır. Yazılamayan bir rapor yolu (olmayan dizin, dizin yerine dosya) FFmpeg başlamadan çalıştırmayı durdurur; taşıma sırasında bir hata olursa o ana kadar değiştirilmiş raporlar eski içeriklerine geri döndürülür. Böylece bir çalıştırma yeni bir CSV'yi eski bir SRT'nin yanında bırakmaz. Ses çıktısı önce yayımlanır; yalnızca rapor taşıması başarısız olursa hata iletisi sesin yazıldığını, raporların güncellenmediğini söyler.
 
 ## Kelime listesi
 
@@ -269,7 +272,10 @@ python3 scripts/benchmark.py # Performans tablosunu yeniden üretir (--quick: k�
 FFmpeg ve FFprobe zorunlu: kapı, render testleri atlanıp kapsam eşiği
 düşmesin diye açık bir hata verip durur. İkili dosyalar `PATH`'te değilse
 `FFMPEG=/yol/ffmpeg` ve `FFPROBE=/yol/ffprobe` ile göster; `scripts/check.sh`
-bulundukları dizini `PATH`'in başına ekler. Geliştirme aracı sürümleri
+bulundukları dizini `PATH`'in başına ekler. İkisi de `PATH`'te yoksa betik
+alışılmış kurulum dizinlerine de bakar (winget bağlantıları, Chocolatey, Scoop,
+`/c/ffmpeg/bin`, Homebrew): grafik arayüzlü kurulumlar makine `PATH`'ini
+güncelleyip kapıyı başlatan kabuğu güncellemeyebiliyor. Geliştirme aracı sürümleri
 `requirements-dev.txt` içinde sabitlenmiştir ve CI bu dosyayı kurar. Yerel kapı da aynı sabitleri okur: `scripts/check.sh` eksik bir aracı kurarken en yenisini değil, sabitlenmiş sürümü (`ruff==0.17.3` gibi) kurar; böylece yeşil bir yerel çalıştırma ile yeşil CI aynı Ruff, MyPy ve pytest sürümlerini kullanır.
 
 Testler `audio_censor` paketini doğrudan kopyadan içe aktarır (`pyproject.toml`
