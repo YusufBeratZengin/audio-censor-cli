@@ -65,6 +65,11 @@ def run_cli(*argv: object) -> int:
     return main([str(item) for item in argv])
 
 
+def partial_files(directory: Path) -> list[str]:
+    """Names of in-progress render files (``.name.<token>.part<suffix>``)."""
+    return sorted(path.name for path in directory.iterdir() if ".part" in path.name)
+
+
 class TestArgumentParsing:
     def test_defaults(self, audio_file: Path, srt_file: Path, words_file: Path) -> None:
         options = parse_args([str(audio_file), "-s", str(srt_file), "-w", str(words_file)])
@@ -457,6 +462,75 @@ class TestReports:
         assert not audit.exists(), "audit log written for a failed render"
         assert not clean.exists(), "censored subtitles written for a failed render"
         assert not output.exists(), "truncated output left behind"
+
+    def test_failed_render_keeps_the_previous_output(
+        self,
+        audio_file: Path,
+        srt_file: Path,
+        words_file: Path,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """A failed render must not destroy the file that was already there."""
+        output = tmp_path / "previous.wav"
+        output.write_bytes(b"previous render")
+        assert (
+            run_cli(
+                audio_file,
+                "-s",
+                srt_file,
+                "-w",
+                words_file,
+                "-o",
+                output,
+                "--audio-codec",
+                "no-such-encoder",
+            )
+            == 1
+        )
+        capsys.readouterr()
+        assert output.read_bytes() == b"previous render"
+        assert partial_files(tmp_path) == [], "a temporary render file was left behind"
+
+    def test_missing_ffmpeg_keeps_the_previous_output(
+        self,
+        audio_file: Path,
+        srt_file: Path,
+        words_file: Path,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Nothing ran, so nothing may be deleted -- not even the old output."""
+        output = tmp_path / "previous.wav"
+        output.write_bytes(b"previous render")
+        assert (
+            run_cli(
+                audio_file,
+                "-s",
+                srt_file,
+                "-w",
+                words_file,
+                "-o",
+                output,
+                "--ffmpeg",
+                "ffmpeg-does-not-exist",
+            )
+            == 1
+        )
+        capsys.readouterr()
+        assert output.read_bytes() == b"previous render"
+        assert partial_files(tmp_path) == []
+
+    def test_successful_render_replaces_the_previous_output(
+        self, audio_file: Path, srt_file: Path, words_file: Path, tmp_path: Path
+    ) -> None:
+        """The finished render lands on the requested path, with no leftovers."""
+        output = tmp_path / "previous.wav"
+        output.write_bytes(b"previous render")
+        assert run_cli(audio_file, "-s", srt_file, "-w", words_file, "-o", output) == 0
+        assert output.read_bytes() != b"previous render"
+        assert output.stat().st_size > 1000
+        assert partial_files(tmp_path) == []
 
     def test_keep_filter_script(
         self, audio_file: Path, srt_file: Path, words_file: Path, tmp_path: Path

@@ -294,6 +294,72 @@ class TestExecution:
                 graph="[0:a]notarealfilter[aout]",
             )
 
+    def test_failed_run_keeps_the_previous_output(self, audio_file: Path, tmp_path: Path) -> None:
+        """The old file survives a failed render; only the temp file is dropped."""
+        engine = Engine()
+        media = engine.probe(audio_file)
+        output = tmp_path / "out.wav"
+        output.write_bytes(b"previous render")
+        with pytest.raises(FFmpegError, match="FFmpeg failed"):
+            engine.run(
+                input_path=audio_file,
+                output_path=output,
+                media=media,
+                graph="[0:a]notarealfilter[aout]",
+            )
+        assert output.read_bytes() == b"previous render"
+        assert [p.name for p in tmp_path.iterdir() if ".part" in p.name] == []
+
+    def test_run_missing_ffmpeg_keeps_the_previous_output(
+        self, audio_file: Path, tmp_path: Path
+    ) -> None:
+        engine = Engine(ffmpeg="ffmpeg-does-not-exist")
+        engine._script_option = ""
+        media = engine.probe(audio_file)
+        output = tmp_path / "out.wav"
+        output.write_bytes(b"previous render")
+        with pytest.raises(FFmpegError, match="not found"):
+            engine.run(
+                input_path=audio_file,
+                output_path=output,
+                media=media,
+                graph="[0:a]anull[aout]",
+            )
+        assert output.read_bytes() == b"previous render"
+
+    def test_failure_removes_only_the_staged_file(
+        self, audio_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A half written container must never land on the requested path."""
+        engine = Engine()
+        output = tmp_path / "copy.wav"
+        output.write_bytes(b"previous render")
+
+        def fail_after_writing(argv: list[str], *, timeout: float | None) -> None:
+            Path(argv[-1]).write_bytes(b"truncated")
+            raise FFmpegError("FFmpeg failed with exit code 1")
+
+        monkeypatch.setattr(engine, "_execute", fail_after_writing)
+        with pytest.raises(FFmpegError, match="exit code 1"):
+            engine.remux(input_path=audio_file, output_path=output)
+        assert output.read_bytes() == b"previous render"
+        assert [p.name for p in tmp_path.iterdir() if ".part" in p.name] == []
+
+    def test_unmovable_target_is_reported(self, audio_file: Path, tmp_path: Path) -> None:
+        """A directory squatting on the target path must not leak the staging file."""
+        engine = Engine()
+        media = engine.probe(audio_file)
+        output = tmp_path / "target.wav"
+        output.mkdir()
+        with pytest.raises(FFmpegError, match="could not move"):
+            engine.run(
+                input_path=audio_file,
+                output_path=output,
+                media=media,
+                graph="[0:a]anull[aout]",
+            )
+        assert [p.name for p in tmp_path.iterdir() if ".part" in p.name] == []
+
     def test_run_missing_ffmpeg(self, audio_file: Path, tmp_path: Path) -> None:
         engine = Engine(ffmpeg="ffmpeg-does-not-exist")
         engine._script_option = ""

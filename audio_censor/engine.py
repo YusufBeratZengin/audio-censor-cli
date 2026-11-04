@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 import shlex
 import shutil
 import subprocess
 import tempfile
-from dataclasses import dataclass
+import uuid
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -211,6 +214,36 @@ def script_option_for(ffmpeg: str = "ffmpeg", *, help_text: str | None = None) -
     return ""
 
 
+LOGGER = logging.getLogger(__name__)
+
+
+def staged_output_path(output_path: str | Path) -> Path:
+    """A hidden sibling path FFmpeg writes to before the file is renamed.
+
+    The suffix is preserved so the encoder table and ``-movflags`` still pick
+    the right container, and the file lives in the target directory so the
+    final ``os.replace`` stays on one filesystem (and is therefore atomic).
+    """
+    target = Path(output_path)
+    token = f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
+    return target.with_name(f".{target.stem}.{token}.part{target.suffix}")
+
+
+def _discard(path: Path) -> None:
+    """Best effort removal of an unfinished render."""
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return
+    except OSError as exc:  # pragma: no cover - the directory vanished under us
+        LOGGER.warning("could not remove partial output %s: %s", path, exc)
+
+
+def _with_final_output(argv: list[str], staged: Path, final: Path) -> list[str]:
+    """Report the command the user asked for, not the staging path."""
+    return [str(final) if argument == str(staged) else argument for argument in argv]
+
+
 class Engine:
     """Thin, testable wrapper around the FFmpeg command line."""
 
@@ -330,8 +363,16 @@ class Engine:
         keep_script: str | Path | None = None,
         timeout: float | None = None,
     ) -> CommandResult:
-        """Render ``graph`` and mux it with the untouched video stream."""
+        """Render ``graph`` and mux it with the untouched video stream.
+
+        The render is written to a staging file next to the target and only
+        renamed onto it once FFmpeg succeeded, so a failure (or a missing
+        binary) never touches a file the user already had.
+        """
         self._refuse_overwriting_input(input_path, output_path)
+        final = Path(output_path)
+        final.parent.mkdir(parents=True, exist_ok=True)
+        staged = staged_output_path(final)
         option = self.script_option
         workdir: str | None = None
         script_path: str | Path | None = None
@@ -345,14 +386,14 @@ class Engine:
         try:
             argv = self.build_argv(
                 input_path=input_path,
-                output_path=output_path,
+                output_path=staged,
                 media=media,
                 graph=graph,
                 script_path=script_path,
                 audio_codec=audio_codec,
                 audio_bitrate=audio_bitrate,
             )
-            return self._execute(argv, timeout=timeout)
+            return self._render_staged(argv, staged=staged, final=final, timeout=timeout)
         finally:
             if workdir:
                 shutil.rmtree(workdir, ignore_errors=True)
@@ -364,9 +405,34 @@ class Engine:
         output_path: str | Path,
         timeout: float | None = None,
     ) -> CommandResult:
+        """Copy every stream untouched; same all-or-nothing output as ``run``."""
         self._refuse_overwriting_input(input_path, output_path)
-        argv = self.build_copy_argv(input_path=input_path, output_path=output_path)
-        return self._execute(argv, timeout=timeout)
+        final = Path(output_path)
+        final.parent.mkdir(parents=True, exist_ok=True)
+        staged = staged_output_path(final)
+        argv = self.build_copy_argv(input_path=input_path, output_path=staged)
+        return self._render_staged(argv, staged=staged, final=final, timeout=timeout)
+
+    def _render_staged(
+        self, argv: list[str], *, staged: Path, final: Path, timeout: float | None
+    ) -> CommandResult:
+        """Run FFmpeg against ``staged`` and publish it only when it worked.
+
+        A failed run deletes the staging file and leaves ``final`` exactly as
+        it was; a successful one renames it into place in one step, so the
+        target is never a half written container.
+        """
+        try:
+            result = self._execute(argv, timeout=timeout)
+        except BaseException:
+            _discard(staged)
+            raise
+        try:
+            os.replace(staged, final)
+        except OSError as exc:
+            _discard(staged)
+            raise FFmpegError(f"could not move the finished render to {final}: {exc}") from exc
+        return replace(result, argv=_with_final_output(result.argv, staged, final))
 
 
 def format_argv(argv: list[str]) -> str:

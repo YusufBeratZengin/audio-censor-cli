@@ -376,16 +376,6 @@ def _write_reports(
         reporter.info(f"censored subtitles: {options.clean_subtitles}")
 
 
-def _discard_partial_output(path: Path) -> None:
-    """Remove a half written media file left behind by a failed FFmpeg run."""
-    try:
-        path.unlink()
-    except FileNotFoundError:
-        pass
-    except OSError as exc:  # pragma: no cover - the directory vanished under us
-        print(f"warn: could not remove partial output {path}: {exc}", file=sys.stderr)
-
-
 def _render(
     engine: Engine,
     options: CliOptions,
@@ -393,27 +383,23 @@ def _render(
     graph: str | None,
     media: MediaInfo,
 ) -> CommandResult:
-    """Run FFmpeg and drop the output file if the run fails.
+    """Run FFmpeg; the engine publishes the result only when it succeeded.
 
-    A failed FFmpeg invocation often leaves a truncated container behind, which
-    looks like a finished render to anything that only checks ``exists()``.
+    ``Engine.run``/``remux`` render into a hidden staging file and rename it
+    onto ``options.output`` on success, so a failed or impossible run leaves an
+    existing file untouched instead of deleting or truncating it.
     """
-    options.output.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        if graph is None:
-            return engine.remux(input_path=options.input, output_path=options.output)
-        return engine.run(
-            input_path=options.input,
-            output_path=options.output,
-            media=media,
-            graph=graph,
-            audio_codec=options.audio_codec,
-            audio_bitrate=options.audio_bitrate,
-            keep_script=options.keep_script,
-        )
-    except AudioCensorError:
-        _discard_partial_output(options.output)
-        raise
+    if graph is None:
+        return engine.remux(input_path=options.input, output_path=options.output)
+    return engine.run(
+        input_path=options.input,
+        output_path=options.output,
+        media=media,
+        graph=graph,
+        audio_codec=options.audio_codec,
+        audio_bitrate=options.audio_bitrate,
+        keep_script=options.keep_script,
+    )
 
 
 def _report_planned_outputs(options: CliOptions, reporter: _Reporter) -> None:
