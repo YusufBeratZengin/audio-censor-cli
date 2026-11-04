@@ -7,8 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `scripts/benchmark.py` regenerates the README Performance table: it builds
+  synthetic WAV/H.264 inputs with FFmpeg, times the real CLI end to end and
+  fails if the video stream MD5 changed. `--quick` is a ~30 s version used by
+  CI, `--keep DIR` keeps the generated media.
+
 ### Fixed
 
+- Output paths are compared by file identity as well as by name. A hard link
+  under a different name used to pass the collision check and FFmpeg's `-y`
+  then truncated the source media (or the transcript). `Engine.run`/`remux`
+  refuse such an output too, so the library API is protected as well.
+- Whisper JSON timestamps that are `NaN`, `Infinity`, negative or non-numeric
+  are treated as missing instead of reaching the matcher, where a NaN would
+  poison every range comparison. A segment with no usable time still fails
+  loudly.
 - The audit CSV and the censored subtitles are written only after FFmpeg has
   produced the output file. A failed render no longer leaves a report for audio
   that was never made, and the truncated container FFmpeg leaves behind is
@@ -17,8 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   missing instead of running 50+ skipped render tests into a confusing coverage
   failure. `FFMPEG`/`FFPROBE` may point at binaries outside `PATH`.
 - The README and README.tr no longer claim a 20 minute 1080p file renders "in
-  seconds"; both quote measured runs (20 min of 48 kHz stereo in 38 s, 60 s of
-  1080p in 2.95 s) with the machine and tool versions.
+  seconds"; both quote measured runs (20 min of 48 kHz stereo in 37.5 s, 60 s of
+  1080p in 4.1 s) with the machine and tool versions, and name the script that
+  produced them.
 
 - All output paths (`--output`, `--audit`, `--clean-subtitles`,
   `--keep-filter-script`) are validated against the input, the transcript and

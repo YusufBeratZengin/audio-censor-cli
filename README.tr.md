@@ -2,7 +2,7 @@
 
 **Elindeki altyazıyı kullanarak ses ve videodaki küfürlü sözcükleri bip sesiyle, sessizlikle ya da ters çevrilmiş sesle maskeleyen komut satırı aracı.** Konuşma tanıma modeli yok, videoyu yeniden kodlamak yok.
 
-Elindeki podcast, YouTube çıktısı veya çağrı kaydını; yanında SRT, VTT ya da Whisper JSON dökümüyle birlikte ver. Araç her küfürlü sözcüğü 1 kHz bip, sessizlik veya tersten çalınan ses ile değiştirir. Video akışı bit bit kopyalanır (`-c:v copy`), yani yalnızca ses yeniden kodlanır: ölçülen bir çalıştırmada 20 dakikalık 48 kHz stereo ses 38 saniyede, 60 saniyelik 1080p klip ise video akışı aynı MD5 ile korunarak 2,95 saniyede işlendi.
+Elindeki podcast, YouTube çıktısı veya çağrı kaydını; yanında SRT, VTT ya da Whisper JSON dökümüyle birlikte ver. Araç her küfürlü sözcüğü 1 kHz bip, sessizlik veya tersten çalınan ses ile değiştirir. Video akışı bit bit kopyalanır (`-c:v copy`), yani yalnızca ses yeniden kodlanır: ölçülen bir çalıştırmada 20 dakikalık 48 kHz stereo ses 37,5 saniyede, 60 saniyelik 1080p klip ise video akışı aynı MD5 ile korunarak 4,1 saniyede işlendi. `python3 scripts/benchmark.py` bu ölçümü kendi makinenizde yeniden üretir.
 
 ```console
 $ audio-censor podcast.mp4 -s podcast.vtt -w badwords.txt --mode bleep -o clean.mp4
@@ -91,6 +91,12 @@ Her mod yalnızca maskelenen aralıktaki sesi değiştirir, gerisini yerinde bı
 
 Desteklenen JSON biçimleri: `faster-whisper`/`openai-whisper` (`words` alanlı ya da alansız `segments`), düz `{"words": [...]}`, segment listesi ve `whisper.cpp` çıktısı (`transcription[].offsets`, milisaniye).
 
+Zaman damgaları gerçek zaman olmalı: `null`, negatif değerler, `NaN`/`Infinity`
+(JSON ayrıştırıcıları bunları kabul eder) ve sayı olmayan dizeler eksik sayılır.
+Kullanılabilir aralığı olmayan kelime, segmentin dağıtılmış zamanına düşer;
+başlangıcı/bitişi hiç kullanılamayan segment ise yanlış yeri maskelemek yerine
+hata olarak bildirilir.
+
 SRT ve VTT yalnızca replik düzeyinde zaman taşır; bu yüzden kelime aralıkları yaklaşıktır: replik süresi kelimelere uzunluklarına göre paylaştırılır. Gerçek konuşmada duraklamalar, düzensiz hız ve uzun kelimeler vardır; tahmin edilen sınırlar birkaç milisaniyeden çok daha fazla sapabilir. Bu çoğu bip için yeterlidir, ama zamanları yaklaşık kabul edin ve yerleşimin kesin olması gerekiyorsa Whisper JSON kelime zamanlarını kullanın.
 
 ## Seçenekler
@@ -162,13 +168,23 @@ Bunun sonuçları:
 
 ## Performans
 
-Tek bir makinede ölçüldü (Windows 11, Python 3.11.9, FFmpeg n9.0.1), `time
-python3 -m audio_censor ...` ile; süreler FFprobe ve mux dahil duvar saati:
+`python3 scripts/benchmark.py` kendi sentetik girdilerini üretir, gerçek CLI'yi
+uçtan uca (FFprobe ve mux dahil) ölçer ve aşağıdaki tabloyu yazar; aşağıdaki
+çalıştırma tek bir makineden (Windows 11, Python 3.11.9, FFmpeg n9.0.1):
 
+```
+$ python3 scripts/benchmark.py
 | Girdi | Maskelenen aralık | Çıktı | Süre |
 |---|---|---|---|
-| 20 dk, 48 kHz stereo WAV | 120 bip | 28 MB M4A (AAC 192k) | 38 sn |
-| 60 sn, 1080p H.264 + AAC | 6 bip | video MD5 aynı, AAC ses | 2,95 sn |
+| 20 dk, 48 kHz stereo WAV | 120 bip | 29 MB M4A (AAC 192k) | 37,53 sn |
+| 60 sn, 1080p H.264 + AAC | 6 bip | video MD5 aynı, AAC ses | 4,12 sn |
+```
+
+Aynı makinede tekrarlanan çalıştırmalar bu sayıların yaklaşık %10 yakınında
+kalır; bu yüzden "yaklaşık 38 sn" ve "yaklaşık 4 sn" deyin, garanti olarak
+sunmayın. Betik ayrıca video akışının MD5'inin değişmediğini doğrular; `-c:v
+copy` iddiasının ölçülebilir biçimi budur. `--quick` aynı kontrolün ~30 saniyelik
+sürümünü çalıştırır (CI bunu kullanır), `--keep DIZIN` üretilen medyayı saklar.
 
 Baskın maliyet sesin çözülüp yeniden kodlanması; video akış kopyası olduğu için
 daha uzun görüntü kodlama değil dosya kopyalama maliyeti getirir. Disk, CPU ve
@@ -188,6 +204,7 @@ büyür.
 ```bash
 python3 -m pip install -e ".[dev]"
 bash scripts/check.sh        # lint + biçim + tip + test + kapsam eşiği
+python3 scripts/benchmark.py # Performans tablosunu yeniden üretir (--quick: kısa kontrol)
 ```
 
 FFmpeg ve FFprobe zorunlu: kapı, render testleri atlanıp kapsam eşiği

@@ -2,7 +2,7 @@
 
 **Bleep, mute or reverse swear words in audio and video using the transcript you already have — no speech-to-text model, no re-encoding of the video stream.**
 
-Point it at a podcast, a YouTube export or a call recording plus an SRT/VTT/Whisper-JSON transcript, and it replaces every dirty word with a 1 kHz beep, silence, or the word played backwards. The video stream is copied bit-for-bit (`-c:v copy`), so only the audio is decoded and encoded again: 20 minutes of 48 kHz stereo audio rendered in **38 s** in a measured run (WAV in, M4A out, 120 masked words, Windows 11 laptop, Python 3.11, FFmpeg 9.0.1), and a 60 s 1080p clip took 2.95 s with a bit-identical video stream.
+Point it at a podcast, a YouTube export or a call recording plus an SRT/VTT/Whisper-JSON transcript, and it replaces every dirty word with a 1 kHz beep, silence, or the word played backwards. The video stream is copied bit-for-bit (`-c:v copy`), so only the audio is decoded and encoded again: a measured run rendered 20 minutes of 48 kHz stereo audio in **37.5 s** (WAV in, M4A out, 120 masked words, Windows 11 laptop, Python 3.11, FFmpeg 9.0.1), and a 60 s 1080p clip in 4.1 s with a bit-identical video stream. `python3 scripts/benchmark.py` rebuilds that measurement on your machine.
 
 ```console
 $ audio-censor podcast.mp4 -s podcast.vtt -w badwords.txt --mode bleep -o clean.mp4
@@ -121,6 +121,12 @@ Supported JSON shapes: `faster-whisper` / `openai-whisper` (`segments` with or
 without `words`), flat `{"words": [...]}`, a bare list of segments, and
 `whisper.cpp` output (`transcription[].offsets` in milliseconds).
 
+Timestamps must be real times: `null`, negative, `NaN`/`Infinity` (which JSON
+parsers happily accept) and non-numeric strings are treated as missing. A word
+without a usable range falls back to the segment's distributed timing; a segment
+without any usable start/end is reported as an error instead of masking the
+wrong place in the file.
+
 SRT/VTT only carry cue level timing, so per-word ranges are an approximation:
 the cue duration is split between its words in proportion to word length. Real
 speech has pauses, uneven pacing and long words, so the estimated boundaries can
@@ -235,14 +241,23 @@ is proportional to the masked speech, not to the file length.
 
 ## Performance
 
-Measured on one machine (Windows 11, Python 3.11.9, FFmpeg n9.0.1) with
-`time python3 -m audio_censor ...`; the numbers are wall clock, including
-FFprobe and the mux:
+`python3 scripts/benchmark.py` builds its own synthetic inputs, times the real
+CLI end to end (FFprobe and mux included) and prints this table; the run below
+is from one machine (Windows 11, Python 3.11.9, FFmpeg n9.0.1):
 
+```
+$ python3 scripts/benchmark.py
 | Input | Masked ranges | Output | Time |
 |---|---|---|---|
-| 20 min, 48 kHz stereo WAV | 120 beeps | 28 MB M4A (AAC 192k) | 38 s |
-| 60 s, 1080p H.264 + AAC | 6 beeps | same video MD5, AAC audio | 2.95 s |
+| 20 min, 48 kHz stereo WAV | 120 beeps | 29 MB M4A (AAC 192k) | 37.53 s |
+| 60 s, 1080p H.264 + AAC | 6 beeps | video MD5 same, AAC audio | 4.12 s |
+```
+
+Repeat runs on the same machine land within about 10 % of these numbers, so
+quote them as "around 38 s" and "around 4 s", not as guarantees. The script also
+asserts that the video stream MD5 is unchanged, which is the measurable form of
+the `-c:v copy` claim. `--quick` runs a ~30 s version of the same check (CI runs
+that one); `--keep DIR` keeps the generated media.
 
 Decoding and re-encoding the audio track dominates; the video is a stream copy,
 so a longer picture costs a file copy rather than an encode. Your disk, CPU and
@@ -272,6 +287,7 @@ resolution.
 ```bash
 python3 -m pip install -e ".[dev]"
 bash scripts/check.sh        # lint + format + types + tests + coverage gate
+python3 scripts/benchmark.py # regenerate the Performance table (--quick for a smoke run)
 ```
 
 FFmpeg and FFprobe are required — the gate stops with an explicit message
