@@ -78,15 +78,23 @@ Real output from a synthetic 20 s clip (`bash examples/build_demo.sh` reproduces
 ```console
 $ audio-censor podcast.mp4 -s podcast.vtt -w badwords.txt --mode bleep -o clean.mp4 \
     --audit audit.csv --clean-subtitles clean.srt
+warn: 24 word timing(s) are estimated from cue boundaries: SRT and VTT have no word
+      level times, so a masked edge can start slightly before or after the spoken
+      word. Use a Whisper JSON transcript with segments[].words[] when the boundary
+      has to be exact
 info: transcript: podcast.vtt (vtt, 4 cues, 24 words)
 info: media: 20.000s, 48000 Hz, 1 ch, video copied
 info: 2 match(es) -> 2 masked range(s) in bleep mode
-  #1   00:00:09.667 - 00:00:10.083 (0.417s)  'shit'  cue 2
-  #2   00:00:15.355 - 00:00:16.258 (0.903s)  'fucking'  cue 3
+  #1   00:00:09.667 - 00:00:10.083 (0.417s)  'shit'  cue 2  [approx]
+  #2   00:00:15.355 - 00:00:16.258 (0.903s)  'fucking'  cue 3  [approx]
 info: audit log: audit.csv
 info: censored subtitles: clean.srt
-ok: beeps mixed in: clean.mp4 (0.90s)
+ok: beeps mixed in: clean.mp4 (1.05s)
 ```
+
+The warning and the `[approx]` markers are the honest part of an SRT/VTT run:
+those ranges came from splitting the cue, not from word timestamps. (The warning
+is printed as one line; it is wrapped here only for the page.)
 
 The video stream really is copied — same MD5 for the compressed video packets
 (the hex value depends on the FFmpeg/x264 build; what matters is that both
@@ -131,9 +139,9 @@ bit-exact, write to `.wav` or `.flac` (or pass a lossless `--audio-codec`).
 
 | Format | Detection | Word timings |
 |---|---|---|
-| SubRip (`.srt`) | suffix or content | cue text is split into words, the cue duration is distributed by word length |
-| WebVTT (`.vtt`) | suffix or `WEBVTT` header | same as SRT |
-| Whisper JSON (`.json`) | suffix or content | real word timings from `segments[].words[]` are used verbatim |
+| SubRip (`.srt`) | suffix or content | cue text is split into words, the cue duration is distributed by word length — labelled `estimated` |
+| WebVTT (`.vtt`) | suffix or `WEBVTT` header | same as SRT — labelled `estimated` |
+| Whisper JSON (`.json`) | suffix or content | real word timings from `segments[].words[]` are used verbatim — labelled `exact` |
 
 Supported JSON shapes: `faster-whisper` / `openai-whisper` (`segments` with or
 without `words`), flat `{"words": [...]}`, a bare list of segments, and
@@ -151,6 +159,13 @@ speech has pauses, uneven pacing and long words, so the estimated boundaries can
 be off by much more than a few milliseconds. That is usually good enough for a
 bleep, but treat the timings as approximate and use Whisper JSON word timings
 when the placement needs to be precise.
+
+The tool does not hide that: every word carries a `timing` label
+(`exact`/`estimated`), a transcript that contains estimated timings triggers one
+warning on stderr, each affected match is marked `[approx]` in the listing, the
+`--json` summary reports `word_timing` and `estimated_words`, and the audit CSV
+has a `timing` column. A whisper transcript with `segments[].words[]` produces
+no warning at all, because those spans are read from the file.
 
 ### Exact word timings, and looking before you publish
 
@@ -246,6 +261,13 @@ before FFmpeg starts, and if a swap fails the reports that were already
 replaced are restored, so a run never leaves a new CSV next to a stale SRT. The
 audio output is published first; if only a report swap fails the error message
 says the audio was written and the reports were not updated.
+
+The audit CSV has one row per match, with these columns in order:
+`index, start_seconds, end_seconds, duration_seconds, start_timecode,
+end_timecode, mode, word, timing, pattern, cue, fuzzy, interval`. `timing` is
+`exact` when the transcript carried the word's own timestamps and `estimated`
+when the span was derived from a cue; `interval` is the number of the merged
+masked range the row belongs to.
 
 ## Word lists
 

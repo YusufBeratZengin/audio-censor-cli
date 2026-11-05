@@ -66,15 +66,23 @@ Aşağıdaki çıktı, `bash examples/build_demo.sh` ile üretilen 20 saniyelik 
 ```console
 $ audio-censor podcast.mp4 -s podcast.vtt -w badwords.txt --mode bleep -o clean.mp4 \
     --audit audit.csv --clean-subtitles clean.srt
+warn: 24 word timing(s) are estimated from cue boundaries: SRT and VTT have no word
+      level times, so a masked edge can start slightly before or after the spoken
+      word. Use a Whisper JSON transcript with segments[].words[] when the boundary
+      has to be exact
 info: transcript: podcast.vtt (vtt, 4 cues, 24 words)
 info: media: 20.000s, 48000 Hz, 1 ch, video copied
 info: 2 match(es) -> 2 masked range(s) in bleep mode
-  #1   00:00:09.667 - 00:00:10.083 (0.417s)  'shit'  cue 2
-  #2   00:00:15.355 - 00:00:16.258 (0.903s)  'fucking'  cue 3
+  #1   00:00:09.667 - 00:00:10.083 (0.417s)  'shit'  cue 2  [approx]
+  #2   00:00:15.355 - 00:00:16.258 (0.903s)  'fucking'  cue 3  [approx]
 info: audit log: audit.csv
 info: censored subtitles: clean.srt
-ok: beeps mixed in: clean.mp4 (0.90s)
+ok: beeps mixed in: clean.mp4 (1.05s)
 ```
+
+Uyarı ve `[approx]` işaretleri SRT/VTT çalıştırmasının dürüst tarafıdır: bu aralıklar
+kelime zaman damgasından değil, replik süresinin bölünmesinden geldi. (Uyarı tek
+satır olarak basılır; burada sayfaya sığsın diye bölündü.)
 
 Video akışının gerçekten kopyalandığını sıkıştırılmış paketlerin MD5'i ile doğrulayabilirsin (onaltılık değer FFmpeg/x264 derlemesine göre değişir; önemli olan iki satırın aynı olması):
 
@@ -101,9 +109,9 @@ Her mod yalnızca maskelenen aralıktaki sesi değiştirir, gerisini yerinde bı
 
 | Format | Tanıma | Kelime zamanları |
 |---|---|---|
-| SubRip (`.srt`) | uzantı veya içerik | replik metni kelimelere bölünür, süre kelime uzunluğuna göre dağıtılır |
-| WebVTT (`.vtt`) | uzantı veya `WEBVTT` başlığı | SRT ile aynı |
-| Whisper JSON (`.json`) | uzantı veya içerik | `segments[].words[]` içindeki gerçek kelime zamanları aynen kullanılır |
+| SubRip (`.srt`) | uzantı veya içerik | replik metni kelimelere bölünür, süre kelime uzunluğuna göre dağıtılır — `estimated` etiketi |
+| WebVTT (`.vtt`) | uzantı veya `WEBVTT` başlığı | SRT ile aynı — `estimated` etiketi |
+| Whisper JSON (`.json`) | uzantı veya içerik | `segments[].words[]` içindeki gerçek kelime zamanları aynen kullanılır — `exact` etiketi |
 
 Desteklenen JSON biçimleri: `faster-whisper`/`openai-whisper` (`words` alanlı ya da alansız `segments`), düz `{"words": [...]}`, segment listesi ve `whisper.cpp` çıktısı (`transcription[].offsets`, milisaniye).
 
@@ -114,6 +122,8 @@ başlangıcı/bitişi hiç kullanılamayan segment ise yanlış yeri maskelemek 
 hata olarak bildirilir.
 
 SRT ve VTT yalnızca replik düzeyinde zaman taşır; bu yüzden kelime aralıkları yaklaşıktır: replik süresi kelimelere uzunluklarına göre paylaştırılır. Gerçek konuşmada duraklamalar, düzensiz hız ve uzun kelimeler vardır; tahmin edilen sınırlar birkaç milisaniyeden çok daha fazla sapabilir. Bu çoğu bip için yeterlidir, ama zamanları yaklaşık kabul edin ve yerleşimin kesin olması gerekiyorsa Whisper JSON kelime zamanlarını kullanın.
+
+Araç bunu saklamaz: her kelime `timing` etiketi taşır (`exact`/`estimated`), tahmini zaman içeren döküm stderr'e tek bir uyarı basar, etkilenen her eşleşme listede `[approx]` ile işaretlenir, `--json` özeti `word_timing` ve `estimated_words` alanlarını verir, denetim CSV'sinde `timing` sütunu vardır. `segments[].words[]` içeren bir Whisper dökümü hiç uyarı üretmez, çünkü o aralıklar dosyadan okunur.
 
 ### Kesin kelime zamanları ve yayından önce gözle kontrol
 
@@ -188,6 +198,8 @@ kütüphane çağrıları için aynı kuralı uygular.
 Tüm çıktı yolları (`--output`, `--audit`, `--clean-subtitles`, `--keep-filter-script`) yazmadan önce denetlenir. Girdiden, dökümden ve birbirlerinden farklı olmalıdır; böylece bir yazım hatası kaynak medyayı veya altyazıyı ezemez.
 
 Denetim CSV'si ve sansürlü altyazı, hedeflerinin yanında hazırlanır ve render başarılı olduktan sonra birlikte yerlerine taşınır. Yazılamayan bir rapor yolu (olmayan dizin, dizin yerine dosya) FFmpeg başlamadan çalıştırmayı durdurur; taşıma sırasında bir hata olursa o ana kadar değiştirilmiş raporlar eski içeriklerine geri döndürülür. Böylece bir çalıştırma yeni bir CSV'yi eski bir SRT'nin yanında bırakmaz. Ses çıktısı önce yayımlanır; yalnızca rapor taşıması başarısız olursa hata iletisi sesin yazıldığını, raporların güncellenmediğini söyler.
+
+Denetim CSV'sinde her eşleşme bir satırdır; sütunlar sırasıyla şöyledir: `index, start_seconds, end_seconds, duration_seconds, start_timecode, end_timecode, mode, word, timing, pattern, cue, fuzzy, interval`. `timing`, kelimenin kendi zaman damgası dökümde varsa `exact`, aralık replikten türetildiyse `estimated` olur; `interval` satırın ait olduğu birleşik maskelenen aralığın numarasıdır.
 
 ## Kelime listesi
 

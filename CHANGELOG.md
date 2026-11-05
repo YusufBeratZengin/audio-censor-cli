@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Every word now carries a `timing` label (`exact` when the transcript stored
+  that word's own timestamps, `estimated` when its span was split out of a cue).
+  A transcript with estimated timings prints one warning on stderr, each affected
+  match is marked `[approx]` in the listing, `--json` gains `word_timing` and
+  `estimated_words` (plus a per-match `timing`), and the audit CSV has a `timing`
+  column. A Whisper JSON transcript with `segments[].words[]` is silent because
+  its spans are read from the file.
 - The audit CSV and the censored subtitles are staged next to their target and
   published as one set (`audio_censor/reports.py`). A report path that cannot be
   written now fails before FFmpeg starts, and a failed swap restores the reports
@@ -24,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `scripts/check.sh` also finds an FFmpeg that `winget install Gyan.FFmpeg`
+  unpacked under `%LOCALAPPDATA%/Microsoft/WinGet/Packages/*/*/bin`. winget only
+  creates the `Links` shims when the account may make symlinks; without the new
+  glob a fresh install stayed invisible to an already open shell and the gate
+  stopped with "ffmpeg was not found".
 - Numeric options reject `nan`, `inf` and `-inf`. `argparse`'s `float()` accepts
   them, and they silently disabled every check built on comparisons:
   `--max-gap-ms nan` made `gap > max_gap` false for every pair, so a multi-word
