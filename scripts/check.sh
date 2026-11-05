@@ -69,6 +69,15 @@ if ! command -v ffmpeg >/dev/null 2>&1; then
     "/opt/homebrew/bin"
     "/usr/local/bin"
   )
+  # `winget install Gyan.FFmpeg` puts the binaries under
+  # Packages/Gyan.FFmpeg_*/ffmpeg-<version>/bin and only creates the Links
+  # shims when the account may create symlinks; without this glob a fresh
+  # install stays invisible to an already open shell.
+  shopt -s nullglob
+  for candidate in "${LOCALAPPDATA:-}"/Microsoft/WinGet/Packages/*/*/bin; do
+    FFMPEG_CANDIDATES+=("$candidate")
+  done
+  shopt -u nullglob
   for candidate in "${FFMPEG_CANDIDATES[@]}"; do
     [ -n "$candidate" ] && [ -d "$candidate" ] || continue
     if [ -x "$candidate/ffmpeg" ] || [ -x "$candidate/ffmpeg.exe" ]; then
