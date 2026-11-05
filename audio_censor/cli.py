@@ -302,7 +302,8 @@ def _describe_matches(matches: list[Match], intervals: list[Interval], stream: T
         print(
             f"  #{index:<3d} {format_timecode(match.start)} - {format_timecode(match.end)} "
             f"({match.end - match.start:.3f}s)  {match.text!r}  cue {match.cue}"
-            + ("  [fuzzy]" if match.fuzzy else ""),
+            + ("  [fuzzy]" if match.fuzzy else "")
+            + ("  [approx]" if match.timing != "exact" else ""),
             file=stream,
         )
     if len(intervals) != len(matches):
@@ -329,6 +330,8 @@ def _summary(
         "output": None if output is None else str(output),
         "subtitles": str(options.subtitles),
         "transcript_format": transcript.format,
+        "word_timing": transcript.word_timing,
+        "estimated_words": transcript.estimated_word_count,
         "mode": options.mode,
         "words": len(transcript.words),
         "matches": [
@@ -339,6 +342,7 @@ def _summary(
                 "pattern": match.pattern,
                 "cue": match.cue,
                 "fuzzy": match.fuzzy,
+                "timing": match.timing,
             }
             for match in matches
         ],
@@ -477,6 +481,16 @@ def execute(options: CliOptions, stdout: TextIO | None = None, stderr: TextIO | 
         f"transcript: {options.subtitles.name} ({transcript.format}, "
         f"{len(transcript.cues)} cues, {len(transcript.words)} words)"
     )
+    if transcript.estimated_word_count:
+        # SRT/VTT only time the whole cue; the tool spreads that duration over
+        # the tokens.  Say so once, up front, instead of letting a user assume
+        # the mask edges are sample accurate.
+        reporter.warn(
+            f"{transcript.estimated_word_count} word timing(s) are estimated from cue "
+            "boundaries: SRT and VTT have no word level times, so a masked edge can "
+            "start slightly before or after the spoken word. Use a Whisper JSON "
+            "transcript with segments[].words[] when the boundary has to be exact"
+        )
 
     matcher = BadWordMatcher(
         resolve_words(options.words),

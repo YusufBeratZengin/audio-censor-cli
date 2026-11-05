@@ -5,6 +5,11 @@ tool needs word level spans, so cue text is split into tokens and the cue
 duration is distributed proportionally to token length.  Whisper JSON usually
 carries real word timings and those are used verbatim when present.
 
+Every :class:`Word` records which of the two happened in its ``timing`` field
+(``exact``/``estimated``) and :attr:`Transcript.word_timing` summarises the file,
+so the CLI, the JSON summary and the audit CSV can tell a real boundary from an
+approximation instead of presenting both as equally certain.
+
 The public entry point is :func:`load_transcript`.
 """
 
@@ -25,6 +30,12 @@ _TIMING_LINE = re.compile(r"^\s*(\S+)\s*-->\s*(\S+)")
 _TAG = re.compile(r"<[^>]*>|\{[^}]*\}")
 _SUPPORTED_SUFFIXES = {".srt": "srt", ".vtt": "vtt", ".json": "whisper"}
 
+#: Word timing precision labels.  ``EXACT`` means the transcript carried a
+#: timestamp for that individual word; ``ESTIMATED`` means the cue duration was
+#: spread over its tokens (SRT/VTT only have cue level times).
+EXACT = "exact"
+ESTIMATED = "estimated"
+
 
 @dataclass(frozen=True, slots=True)
 class Word:
@@ -35,10 +46,19 @@ class Word:
     text: str
     norm: str
     cue: int
+    #: ``"exact"`` when the transcript carried this word's own timestamps,
+    #: ``"estimated"`` when the cue duration was split across its tokens
+    #: (SRT/VTT).  Downstream reports quote it so a reader can tell a real
+    #: word boundary from an approximation.
+    timing: str = ESTIMATED
 
     @property
     def duration(self) -> float:
         return max(0.0, self.end - self.start)
+
+    @property
+    def exact_timing(self) -> bool:
+        return self.timing == EXACT
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +84,26 @@ class Transcript:
     @property
     def duration(self) -> float:
         return max((cue.end for cue in self.cues), default=0.0)
+
+    @property
+    def estimated_word_count(self) -> int:
+        """How many words have a span spread over their cue instead of their own."""
+        return sum(1 for word in self.words if not word.exact_timing)
+
+    @property
+    def word_timing(self) -> str:
+        """``"exact"``, ``"estimated"`` or ``"mixed"`` for the whole transcript.
+
+        Callers use this to decide whether the mask boundaries can be trusted
+        to the millisecond or are only as good as the cue split.
+        """
+        if not self.words:
+            return ESTIMATED
+        if all(word.exact_timing for word in self.words):
+            return EXACT
+        if all(not word.exact_timing for word in self.words):
+            return ESTIMATED
+        return "mixed"
 
 
 def parse_timestamp(value: str) -> float:
@@ -115,6 +155,7 @@ def _distribute(text: str, start: float, end: float, cue_index: int) -> tuple[Wo
                 text=token,
                 norm=normalize_token(token),
                 cue=cue_index,
+                timing=ESTIMATED,
             )
         )
         cursor = token_end
@@ -259,6 +300,7 @@ def _segment_words(segment: dict[str, Any], index: int) -> tuple[Word, ...] | No
                 text=text,
                 norm=normalize_token(text),
                 cue=index,
+                timing=EXACT,
             )
         )
     return tuple(words) or None

@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .errors import ConfigError
-from .parser import Word
+from .parser import EXACT, Word
 from .text import collapse_repeats, levenshtein, normalize_token
 
 SEPARATOR = "\x00"
@@ -41,6 +41,10 @@ class Match:
     first_word: int
     last_word: int
     fuzzy: bool = False
+    #: Precision of the matched span: ``"exact"`` when every word of the match
+    #: had its own transcript timestamps, ``"estimated"`` when the span came
+    #: from cue-level times split across tokens.
+    timing: str = "estimated"
 
 
 @dataclass(frozen=True, slots=True, order=True)
@@ -135,6 +139,11 @@ def _literal_regex(word: str) -> str:
     return rf"(?<!\w){body}(?!\w)"
 
 
+def _span_timing(words: tuple[Word, ...], first: int, last: int) -> str:
+    """``"exact"`` only when every word of the span has real timestamps."""
+    return EXACT if all(word.exact_timing for word in words[first : last + 1]) else "estimated"
+
+
 class BadWordMatcher:
     """Compile a bad word list and find it inside a transcript."""
 
@@ -225,6 +234,7 @@ class BadWordMatcher:
                     cue=words[first].cue,
                     first_word=first,
                     last_word=last,
+                    timing=_span_timing(words, first, last),
                 )
 
         if self.fuzzy > 0:
@@ -251,6 +261,7 @@ class BadWordMatcher:
                             first_word=index,
                             last_word=index,
                             fuzzy=True,
+                            timing=word.timing,
                         )
                         covered.add(index)
 

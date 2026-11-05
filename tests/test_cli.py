@@ -279,9 +279,57 @@ class TestReports:
         payload = json.loads(capsys.readouterr().out)
         assert payload["mode"] == "bleep"
         assert payload["matches"][0]["text"] == "shit"
+        assert payload["matches"][0]["timing"] == "estimated"
+        assert payload["word_timing"] == "estimated"
         assert payload["intervals"][0]["start"] == pytest.approx(3.0)
         assert payload["elapsed_seconds"] >= 0
         assert payload["command"]
+
+    def test_srt_transcript_warns_about_estimated_timings(
+        self,
+        audio_file: Path,
+        srt_file: Path,
+        words_file: Path,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        output = tmp_path / "approx.wav"
+        assert run_cli(audio_file, "-s", srt_file, "-w", words_file, "-o", output) == 0
+        captured = capsys.readouterr()
+        assert "estimated" in captured.err
+        assert "Whisper" in captured.err
+        # the human listing marks the approximate matches
+        assert "[approx]" in captured.out
+
+    def test_whisper_word_timings_are_exact_and_quiet(
+        self,
+        audio_file: Path,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        transcript = tmp_path / "words.json"
+        transcript.write_text(
+            json.dumps(
+                {
+                    "segments": [
+                        {
+                            "start": 3.0,
+                            "end": 4.0,
+                            "text": "shit",
+                            "words": [{"word": "shit", "start": 3.1, "end": 3.4}],
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        output = tmp_path / "exact.wav"
+        assert run_cli(audio_file, "-s", transcript, "-w", "shit", "-o", output, "--json") == 0
+        captured = capsys.readouterr()
+        payload = json.loads(captured.out)
+        assert payload["word_timing"] == "exact"
+        assert payload["matches"][0]["timing"] == "exact"
+        assert "estimated" not in captured.err
 
     def test_dry_run(
         self,

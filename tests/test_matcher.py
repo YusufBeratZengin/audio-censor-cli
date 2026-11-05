@@ -170,6 +170,19 @@ class TestMatching:
         assert (match.first_word, match.last_word) == (0, 0)
         assert match.fuzzy is False
 
+    def test_match_carries_the_word_timing_precision(self) -> None:
+        estimated = make_words((0.0, 0.5, "fuck"))
+        assert BadWordMatcher(["fuck"]).find(estimated)[0].timing == "estimated"
+        exact = (Word(start=0.0, end=0.5, text="fuck", norm="fuck", cue=1, timing="exact"),)
+        assert BadWordMatcher(["fuck"]).find(exact)[0].timing == "exact"
+
+    def test_fuzzy_match_carries_the_word_timing_precision(self) -> None:
+        words = (
+            Word(start=0.0, end=0.5, text="salllaaak", norm="salllaaak", cue=1, timing="exact"),
+        )
+        match = BadWordMatcher(["sallak"], fuzzy=1).find(words)[0]
+        assert match.timing == "exact"
+
 
 class TestFuzzy:
     def test_elongated_word(self) -> None:

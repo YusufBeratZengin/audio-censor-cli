@@ -12,6 +12,7 @@ import pytest
 from audio_censor.errors import TranscriptError
 from audio_censor.parser import (
     Cue,
+    Transcript,
     Word,
     detect_format,
     load_transcript,
@@ -394,6 +395,55 @@ def test_cue_and_word_are_frozen() -> None:
         word.start = 2.0  # type: ignore[misc]
     cue = Cue(index=1, start=0.0, end=1.0, text="a", words=(word,))
     assert cue.words[0].duration == pytest.approx(1.0)
+
+
+class TestWordTimingPrecision:
+    """Every word says whether its span is real or spread over a cue."""
+
+    def test_srt_words_are_estimated(self) -> None:
+        cues = parse_srt("1\n00:00:01,000 --> 00:00:02,000\nhello fucking world\n")
+        words = [word for cue in cues for word in cue.words]
+        assert {word.timing for word in words} == {"estimated"}
+
+    def test_whisper_words_are_exact(self) -> None:
+        transcript = load_transcript(REPO_ROOT / "examples" / "whisper-demo.json")
+        assert transcript.word_timing == "exact"
+        assert all(word.timing == "exact" for word in transcript.words)
+
+    def test_mixed_when_one_segment_lacks_word_times(self, tmp_path: Path) -> None:
+        payload = {
+            "segments": [
+                {
+                    "start": 0.0,
+                    "end": 1.0,
+                    "text": "oh shit",
+                    "words": [
+                        {"word": "oh", "start": 0.0, "end": 0.3},
+                        {"word": "shit", "start": 0.4, "end": 0.9},
+                    ],
+                },
+                {"start": 2.0, "end": 3.0, "text": "fuck that"},
+            ]
+        }
+        path = tmp_path / "mixed.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        transcript = load_transcript(path)
+        assert transcript.word_timing == "mixed"
+        assert transcript.estimated_word_count == 2
+
+    def test_srt_transcript_reports_estimated(self) -> None:
+        cues = parse_srt("1\n00:00:01,000 --> 00:00:02,000\nhello fucking world\n")
+        transcript = Transcript(
+            cues=cues, words=tuple(w for cue in cues for w in cue.words), source="x", format="srt"
+        )
+        assert transcript.word_timing == "estimated"
+        assert transcript.estimated_word_count == 3
+
+    def test_shifting_keeps_the_precision_labels(self) -> None:
+        transcript = load_transcript(REPO_ROOT / "examples" / "whisper-demo.json")
+        shifted = shift_transcript(transcript, 0.25)
+        assert shifted.word_timing == "exact"
+        assert shifted.estimated_word_count == 0
 
 
 def test_shipped_whisper_example_keeps_exact_word_times() -> None:

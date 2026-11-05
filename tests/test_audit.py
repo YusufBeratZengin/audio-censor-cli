@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -74,6 +75,15 @@ class TestAuditRows:
     def test_header_matches_rows(self, matches, intervals) -> None:
         rows = audit_rows(matches, intervals, mode="bleep")
         assert set(rows[0]) == set(FIELDNAMES)
+
+    def test_timing_precision_is_recorded(self, matches, intervals) -> None:
+        rows = audit_rows(matches, intervals, mode="bleep")
+        assert rows[0]["timing"] == "estimated"
+
+    def test_exact_matches_are_recorded_as_exact(self, matches, intervals) -> None:
+        exact = [replace(match, timing="exact") for match in matches]
+        rows = audit_rows(exact, intervals, mode="bleep")
+        assert {row["timing"] for row in rows} == {"exact"}
 
 
 class TestWriteAudit:
